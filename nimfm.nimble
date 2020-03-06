@@ -1,0 +1,15 @@
+# Package
+version       = "0.1.0"
+author        = "Kyohei Atarashi"
+description   = "nimfm: A library for factorization machines in Nim."
+license       = "MIT"
+srcDir        = "src"
+
+
+# Dependencies
+requires "nim >= 1.0.6", "cligen >= 0.9.43"
+
+# Compile and create binary in ./bin for end users
+task make, "builds nimfm":
+  exec "mkdir -p bin"
+  exec "nim c  -o:bin/nimfm -d:release -d:danger ./src/nimfm.nim"
