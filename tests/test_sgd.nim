@@ -1,14 +1,14 @@
 import unittest
-import utils, cd_slow
+import utils, sgd_slow
 import nimfm/loss, nimfm/dataset, nimfm/tensor, nimfm/factorization_machine
-import nimfm/optimizers/coordinate_descent
+import nimfm/optimizers/sgd
 import fm_slow
 
 
-suite "Test coordinate descent":
+suite "Test stochastic gradient descent":
   let
-    n = 50
-    d = 6
+    n = 80
+    d = 8
     nComponents = 4
 
 
@@ -17,7 +17,7 @@ suite "Test coordinate descent":
       for fitLower in [explicit, none, augment]:
         for fitIntercept in [true, false]:
           var
-            X: CSCDataset
+            X: CSRDataset
             y: seq[float64]
           createFMDataset(X, y, n, d, degree, nComponents, 42,
                           fitLower, false, fitIntercept)
@@ -27,8 +27,8 @@ suite "Test coordinate descent":
             task = regression, degree = degree, nComponents = nComponents,
             fitLower = fitLower, fitLinear = false,
             fitIntercept = fitIntercept, randomState = 1)
-          var cd = newCoordinateDescent(maxIter = 10, verbose = false, tol = 0)
-          cd.fit(X, y, fm)
+          var sgd = newSGD(maxIter = 10, verbose = false, tol = 0)
+          sgd.fit(X, y, fm)
           for j in 0..<nComponents:
             check fm.w[j] == 0.0
 
@@ -38,7 +38,7 @@ suite "Test coordinate descent":
       for fitLower in [explicit, none, augment]:
         for fitLinear in [true, false]:
           var
-            X: CSCDataset
+            X: CSRDataset
             y: seq[float64]
           createFMDataset(X, y, n, d, degree, nComponents, 42,
                           fitLower, fitLinear, false)
@@ -47,20 +47,20 @@ suite "Test coordinate descent":
             task = regression, degree = degree, nComponents = nComponents,
             fitLower = fitLower, fitLinear = fitLinear,
             fitIntercept = false, randomState = 1)
-          var cd = newCoordinateDescent(
+          var sgd = newSGD(
             maxIter = 10, verbose = false, tol = 0
           )
-          cd.fit(X, y, fm)
+          sgd.fit(X, y, fm)
           check fm.intercept == 0.0
 
 
   test "Test warmStart":
     for degree in 2..<5:
-      for fitLower in [explicit, none, augment]:
-        for fitLinear in [true, false]:
-          for fitIntercept in [true, false]:
+      for fitLower in [explicit, augment, none]:
+        for fitLinear in [false, true]:
+          for fitIntercept in [false, false]:
             var
-              X: CSCDataset
+              X: CSRDataset
               y: seq[float64]
             createFMDataset(X, y, n, d, degree, nComponents, 42,
                             fitLower, fitLinear, fitIntercept)
@@ -68,59 +68,58 @@ suite "Test coordinate descent":
               task = regression, degree = degree, nComponents = nComponents,
               fitLower = fitLower, fitLinear = fitLinear, warmStart = true,
               fitIntercept = fitIntercept, randomState = 1)
-            var cdWarm = newCoordinateDescent(
-              maxIter = 1, verbose = false, tol = 0
+            var sgdWarm = newSGD(
+              maxIter = 1, verbose = false, tol = 0, shuffle = false
             )
             for i in 0..<10:
-              cdWarm.fit(X, y, fmWarm)
-
+              sgdWarm.fit(X, y, fmWarm)
             var fm = newFactorizationMachine(
               task = regression, degree = degree, nComponents = nComponents,
-              fitLower = fitLower, fitLinear = fitLinear,
+              fitLower = fitLower, fitLinear = fitLinear, 
               fitIntercept = fitIntercept, randomState = 1)
 
-            var cd = newCoordinateDescent(
-              maxIter = 10, verbose = false, tol = 0
+            var sgd = newSGD(
+              maxIter = 10, verbose = false, tol = 0, shuffle = false
             )
-            cd.fit(X, y, fm)
+            sgd.fit(X, y, fm)
 
             check abs(fm.intercept-fmWarm.intercept) < 1e-8
             checkAlmostEqual(fm.w, fmWarm.w, atol = 1e-8)
             checkAlmostEqual(fm.P, fmWarm.P, atol = 1e-8)
 
-  # Too slow!
+
   test "Comparison to naive implementation":
-    for degree in 2..<5:
+    for degree in 2..<3:
       for fitLower in [explicit, none, augment]:
-        for fitLinear in [true, false]:
-          for fitIntercept in [true, false]:
+        for fitLinear in [false, true]:
+          for fitIntercept in [false, true]:
             var
-              X: CSCDataset
+              X: CSRDataset
               y: seq[float64]
               XMat = zeros([n, d])
             createFMDataset(X, y, n, d, degree, nComponents, 42,
                             fitLower, fitLinear, fitIntercept,
                             threshold=0.3)
-            for j in 0..<d:
-              for (i, val) in X.getCol(j):
+            for i in 0..<n:
+              for (j, val) in X.getRow(i):
                 XMat[i, j] = val
             # fit slow version
             var fmSlow = newFMSlow(
               task = regression, degree = degree, nComponents = nComponents,
               fitLower = fitLower, fitLinear = fitLinear,
               fitIntercept = fitIntercept, randomState = 1)
-            var cdSlow = newCoordinateDescentSlow(maxIter = 3, tol = 0)
-            cdSlow.fit(XMat, y, fmSlow)
+            var sgdSlow = newSGDSlow(maxIter = 5, tol = 0)
+            sgdSlow.fit(XMat, y, fmSlow)
 
             # fit fast version
             var fm = newFactorizationMachine(
               task = regression, degree = degree, nComponents = nComponents,
               fitLower = fitLower, fitLinear = fitLinear,
               fitIntercept = fitIntercept, randomState = 1)
-            var cd = newCoordinateDescent(
-              maxIter = 3, verbose = false, tol = 0
+            var sgd = newSGD(
+              maxIter = 5, verbose = false, tol = 0
             )
-            cd.fit(X, y, fm)
+            sgd.fit(X, y, fm)
 
             check abs(fm.intercept-fmSlow.intercept) < 1e-3
             checkAlmostEqual(fm.w, fmSlow.w)
@@ -133,7 +132,7 @@ suite "Test coordinate descent":
         for fitLinear in [true, false]:
           for fitIntercept in [true, false]:
             var
-              X: CSCDataset
+              X: CSRDataset
               y: seq[float64]
             createFMDataset(X, y, n, d, degree, nComponents, 42,
                             fitLower, fitLinear, fitIntercept)
@@ -141,14 +140,14 @@ suite "Test coordinate descent":
             var fm = newFactorizationMachine(
               task = regression, degree = degree, nComponents = nComponents,
               fitLower = fitLower, fitLinear = fitLinear, alpha0 = 1e-9,
-              alpha = 1e-9, beta = 1e-9,
-              fitIntercept = fitIntercept, randomState = 1)
-            var cd = newCoordinateDescent(
+              alpha = 1e-9, beta = 1e-9, fitIntercept = fitIntercept,
+              randomState = 1)
+            var sgd = newSGD(
               maxIter = 20, verbose = false, tol = 0
             )
             fm.init(X)
             let scoreBefore = fm.score(X, y)
-            cd.fit(X, y, fm)
+            sgd.fit(X, y, fm)
             check fm.score(X, y) < scoreBefore
 
 
@@ -158,7 +157,7 @@ suite "Test coordinate descent":
         for fitLinear in [true, false]:
           for fitIntercept in [true, false]:
             var
-              X: CSCDataset
+              X: CSRDataset
               y: seq[float64]
             createFMDataset(X, y, n, d, degree, nComponents, 42,
                             fitLower, fitLinear, fitIntercept,
@@ -169,19 +168,20 @@ suite "Test coordinate descent":
               fitLower = fitLower, fitLinear = fitLinear, warmStart = true,
               fitIntercept = fitIntercept, randomState = 1,
               alpha0 = 0, alpha = 0, beta = 0)
-            var cd = newCoordinateDescent(
+            var sgd = newSGD(
               maxIter = 100, verbose = false, tol = 0
             )
-            cd.fit(X, y, fmWeakReg)
+            sgd.fit(X, y, fmWeakReg)
             
             var fmStrongReg = newFactorizationMachine(
               task = regression, degree = degree, nComponents = nComponents,
               fitLower = fitLower, fitLinear = fitLinear, warmStart = true,
               fitIntercept = fitIntercept, randomState = 2,
               alpha0 = 1000, alpha = 1000, beta = 1000)
-            cd.fit(X, y, fmStrongReg)
+            sgd.fit(X, y, fmStrongReg)
 
             check fmWeakReg.score(X, y) < fmStrongReg.score(X, y)
+
             check abs(fmWeakReg.intercept) >= abs(fmStrongReg.intercept)
             check norm(fmWeakReg.w, 2) >= norm(fmStrongReg.w, 2)
             check norm(fmWeakReg.P, 2) >= norm(fmStrongReg.P, 2)
