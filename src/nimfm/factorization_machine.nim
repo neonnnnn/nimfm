@@ -1,4 +1,4 @@
-import loss, dataset, kernels, tensor, metrics
+import loss, kernels, tensor, metrics
 import math, sugar, random, sequtils, strutils, parseutils
 
 
@@ -12,7 +12,7 @@ type
     regression = "r",
     classification = "c"
 
-  FactorizationMachineObj = object
+  FactorizationMachineObj* = object
     task*: TaskKind         ## regression or classification.
     degree*: int            ## Degree of the polynomial.
     nComponents*: int       ## Number of basis vectors (rank hyper-parameter).
@@ -118,47 +118,44 @@ proc nAugments*(self: FactorizationMachine): int =
 
 
 proc nOrders(self: FactorizationMachine): int =
-  case self.fitLower
-  of explicit:
-    result = self.degree-1
-  of none, augment:
-    result = 1
+  if self.degree == 1:
+    result = 0
+  else:
+    case self.fitLower
+    of explicit:
+      result = self.degree-1
+    of none, augment:
+      result = 1
 
 
-template createDecisionFunction(T: typedesc) =
-  proc decisionFunction*(self: FactorizationMachine, X: T): seq[float64] =
-    self.checkInitialized()
-    let nSamples: int = X.n_samples
-    let nComponents: int = self.nComponents
-    let nFeatures = X.nFeatures
-    var A = zeros([nSamples, self.degree+1])
-    result = newSeqWith(nSamples, self.intercept)
+proc decisionFunction*[Dataset](self: FactorizationMachine, X: Dataset):
+                                seq[float64] =
+  self.checkInitialized()
+  let nSamples: int = X.n_samples
+  let nComponents: int = self.nComponents
+  let nFeatures = X.nFeatures
+  var A = zeros([nSamples, self.degree+1])
+  result = newSeqWith(nSamples, 0.0)
 
-    if self.fitLinear:
-      linear(X, self.w, result)
+  linear(X, self.w, result)
+  for i in 0..<nSamples:
+    result[i] += self.intercept
 
-    var nAugments = self.nAugments
-    if (nAugments + nFeatures != self.P.shape[2]):
-      raise newException(ValueError, "Invalid nFeatures.")
-    for order in 0..<self.nOrders:
-      for s in 0..<nComponents:
-        anova(X, self.P, A, self.degree-order, order, s, nAugments)
-        for i in 0..<nSamples:
-          result[i] += A[i, self.degree-order]
-
-createDecisionFunction(CSRDataset)
-createDecisionFunction(CSCDataset)
+  var nAugments = self.nAugments
+  if (nAugments + nFeatures != self.P.shape[2]):
+    raise newException(ValueError, "Invalid nFeatures.")
+  for order in 0..<self.nOrders:
+    for s in 0..<nComponents:
+      anova(X, self.P, A, self.degree-order, order, s, nAugments)
+      for i in 0..<nSamples:
+        result[i] += A[i, self.degree-order]
 
 
-template createPredict(T: typedesc) =
-  proc predict*(self: FactorizationMachine, X: T): seq[int] =
-    result = decisionFunction(self, X).map(x=>sgn(x))
-
-createPredict(CSRDataset)
-createPredict(CSCDataset)
+proc predict*[Dataset](self: FactorizationMachine, X: Dataset): seq[int] =
+  result = decisionFunction(self, X).map(x=>sgn(x))
 
 
-proc init*(self: FactorizationMachine, X: Dataset) =
+proc init*[Dataset](self: FactorizationMachine, X: Dataset) =
   if not (self.warmStart and self.isInitalized):
     let nFeatures: int = X.nFeatures
     randomize(self.randomState)
@@ -167,9 +164,10 @@ proc init*(self: FactorizationMachine, X: Dataset) =
     let nOrders = self.nOrders
     let nAugments = self.nAugments
     self.P = randomNormal([nOrders, self.nComponents, nFeatures+nAugments],
-                            scale = self.scale)
+                          scale = self.scale)
     self.intercept = 0.0
   self.isInitalized = true
+
 
 proc checkTarget*(self: FactorizationMachine, y: seq[SomeNumber]):
                   seq[float64] =
@@ -180,17 +178,15 @@ proc checkTarget*(self: FactorizationMachine, y: seq[SomeNumber]):
     result = y.map(x => float(x))
 
 
-template createScore*(T: typedesc) =
-  proc score*(self: FactorizationMachine, X: T, y: seq[float64]):
-            float64 =
-    let yPred = self.decisionFunction(X)
-    case self.task
-    of regression:
-      result = rmse(yPred, y)
-    of classification:
-      result = accuracy(yPred.map(x=>sgn(x)), y.map(x=>sgn(x)))
-createScore(CSCDataset)
-createScore(CSRDataset)
+proc score*[Dataset](self: FactorizationMachine, X: Dataset,
+                     y: seq[float64]): float64 =
+  let yPred = self.decisionFunction(X)
+  case self.task
+  of regression:
+    result = rmse(yPred, y)
+  of classification:
+    result = accuracy(yPred.map(x=>sgn(x)), y.map(x=>sgn(x)))
+
 
 
 proc dump*(self: FactorizationMachine, fname: string) =

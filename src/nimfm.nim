@@ -11,7 +11,7 @@ export sgd, coordinate_descent
 
 # The followings are for end users
 
-proc echoDataInfo(X: Dataset) =
+proc echoDataInfo(X: BaseDataset) =
   echo("   Number of samples : ", X.nSamples)
   echo("   Number of features: ", X.nFeatures)
   echo("   Number of nnz     : ", X.nnz)

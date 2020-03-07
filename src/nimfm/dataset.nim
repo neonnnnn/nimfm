@@ -1,33 +1,40 @@
 import sequtils, sugar, parseutils, math, os
 
 type
-  DatasetObj = object of RootObj
+  BaseDataset* = ref object of RootObj
     nSamples*: int
     nFeatures*: int
-    nnz*: int
     data: seq[float64]
+ 
+  CSRDataset* = ref object of BaseDataset
+   indices: seq[int]
+   indptr: seq[int]
+   jj, jjMax: int
+
+  CSCDataset* = ref object of BaseDataset
     indices: seq[int]
     indptr: seq[int]
-
-  Dataset* = ref DatasetObj
-
-  CSRDataset* = ref object of Dataset
-    jj, jjMax: int
-
-  CSCDataset* = ref object of Dataset
     ii, iiMax: int
 
 
-proc nnz*(self: Dataset): int =
-  len(self.data)
+proc nnz*(self: BaseDataset): int = len(self.data)
 
 
-proc max*(self: Dataset): float64 =
-  max(self.data)
+proc max*(self: BaseDataset): float64 = max(self.data)
 
 
-proc min*(self: Dataset): float64 =
-  min(self.data)
+proc min*(self: BaseDataset): float64 = min(self.data)
+
+
+proc `*=`*(self: BaseDataset, val: float64) = 
+  for i in 0..<self.nnz:
+    self.data[i] *= val
+
+
+proc `/=`*(self: BaseDataset, val: float64) = self *= 1.0 / val
+
+
+proc sum*(self: BaseDataset): float64 = sum(self.data)
 
 
 iterator getRow*(dataset: CSRDataset, i: int): tuple[j: int, val: float64] =
@@ -71,7 +78,7 @@ proc toCSR*(input: seq[seq[float64]]): CSRDataset =
         nnz += 1
   result = CSRDataset(
     data: data, indices: indices, indptr: indptr, nSamples: nSamples,
-    nFeatures: nFeatures, nnz: nnz, jj: 0, jjMax: 0)
+    nFeatures: nFeatures, jj: 0, jjMax: 0)
 
 
 proc toCSC*(input: seq[seq[float64]]): CSCDataset =
@@ -101,14 +108,13 @@ proc toCSC*(input: seq[seq[float64]]): CSCDataset =
 
   result = CSCDataset(
     data: data, indices: indices, indptr: indptr, nSamples: nSamples,
-    nFeatures: nFeatures, nnz: indptr[nFeatures], ii: 0, iiMax: 0)
+    nFeatures: nFeatures, ii: 0, iiMax: 0)
 
 
 proc vstack*(dataseq: varargs[CSRDataset]): CSRDataset =
   new(result)
   result.nSamples = dataseq[0].nSamples
   result.nFeatures = dataseq[0].nFeatures
-  result.nnz = dataseq[0].nnz
   result.data = dataseq[0].data
   result.indices = dataseq[0].indices
   result.indptr = dataseq[0].indptr
@@ -120,7 +126,6 @@ proc vstack*(dataseq: varargs[CSRDataset]): CSRDataset =
     result.data &= X.data
     result.indices &= X.indices
     result.indptr &= X.indptr[1..^1].map(x=>(nnz+x))
-    result.nnz += X.nnz
     result.nSamples += X.nSamples
 
 
@@ -128,7 +133,6 @@ proc hstack*(dataseq: varargs[CSCDataset]): CSCDataset =
   new(result)
   result.nSamples = dataseq[0].nSamples
   result.nFeatures = dataseq[0].nFeatures
-  result.nnz = dataseq[0].nnz
   result.data = dataseq[0].data
   result.indices = dataseq[0].indices
   result.indptr = dataseq[0].indptr
@@ -139,13 +143,13 @@ proc hstack*(dataseq: varargs[CSCDataset]): CSCDataset =
     result.data &= X.data
     result.indices &= X.indices
     result.indptr &= X.indptr[1..^1].map(x=>(nnz+x))
-    result.nnz += X.nnz
     result.nFeatures += X.nFeatures
 
 
 proc loadSVMLightFile(f: string, y: var seq[float]):
                       tuple[data: seq[float], indices, indptr: seq[int],
                             nFeatures: int, offset: int] =
+
   var nnz: int = 0
   var nSamples: int = 0
   var i, j, k: int
@@ -204,7 +208,6 @@ proc loadSVMLightFile*(f: string, dataset: var CSRDataset, y: var seq[float],
   var nFeaturesPredicted: int
   var offset: int
   (data, indices, indptr, nFeaturesPredicted, offset) = loadSVMLightFile(f, y)
-  let nnz = len(indices)
   let nSamples = len(y)
   if (nFeatures > 0) and (nFeaturesPredicted > nFeatures):
     var msg = "nFeatures is " & $nFeatures
@@ -213,7 +216,7 @@ proc loadSVMLightFile*(f: string, dataset: var CSRDataset, y: var seq[float],
 
   dataset = CSRDataset(
     data: data, indices: indices, indptr: indptr, nSamples: nSamples,
-    nFeatures: max(nFeaturesPredicted, nFeatures), nnz: nnz, jj: 0, jjMax: 0)
+    nFeatures: max(nFeaturesPredicted, nFeatures), jj: 0, jjMax: 0)
 
 
 proc loadSVMLightFile*(f: string, dataset: var CSRDataset, y: var seq[int],
@@ -231,7 +234,6 @@ proc loadSVMLightFile*(f: string, dataset: var CSCDataset, y: var seq[float],
   var nFeaturesPredicted: int
   var offset: int
   (data, indices, indptr, nFeaturesPredicted, offset) = loadSVMLightFile(f, y)
-  let nnz = len(indices)
   let nSamples = len(y)
   var indptrCSC: seq[int]
   var offsets: seq[int]
@@ -266,7 +268,7 @@ proc loadSVMLightFile*(f: string, dataset: var CSCDataset, y: var seq[float],
     i.inc()
   dataset = CSCDataset(
     data: data, indices: indices, indptr: indptrCSC, nSamples: nSamples,
-    nFeatures: nFeaturesPredicted, nnz: nnz, ii: 0, iiMax: 0)
+    nFeatures: nFeaturesPredicted, ii: 0, iiMax: 0)
 
 
 proc loadSVMLightFile*(f: string, dataset: var CSCDataset, y: var seq[int],

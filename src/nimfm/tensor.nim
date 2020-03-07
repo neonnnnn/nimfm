@@ -1,6 +1,5 @@
 import sequtils, random, math
 
-
 type
   Tensor* = ref object
     data: seq[seq[seq[float64]]]
@@ -15,13 +14,7 @@ type
     shape*: array[1, int]
 
 
-proc len*(self: Tensor): int =
-  result = self.shape[0]
-
-proc len*(self: Matrix): int =
-  result = self.shape[0]
-
-proc len*(self: Vector): int =
+proc len*[T: Tensor, Vector, Matrix](self: T): int =
   result = self.shape[0]
 
 
@@ -35,6 +28,7 @@ proc `[]+=`*(self: var Tensor, i, j, k: int, val: float64) {.inline.} =
 proc `[]-=`*(self: var Tensor, i, j, k: int, val: float64) {.inline.} =
   self.data[i][j][k] -= val
 
+
 # for Matrix subscription
 proc `[]`*(self: Matrix, i, j: int): var float64 {.inline.} =
   result = self.data[i][j]
@@ -45,6 +39,7 @@ proc `[]+=`*(self: var Matrix, i, j: int, val: float64) {.inline.} =
 proc `[]-=`*(self: var Matrix, i, j: int, val: float64) {.inline.} =
   self.data[i][j] -= val
 
+
 # for Vector subscription
 proc `[]`*(self: Vector, i: int): var float64 {.inline.} =
   result = self.data[i]
@@ -54,6 +49,20 @@ proc `[]+=`*(self: var Vector, i, j: int, val: float64) {.inline.} =
   self.data[i] += val
 proc `[]-=`*(self: var Vector, i: int, val: float64) {.inline.} =
   self.data[i] -= val
+
+
+proc toTensor*(X: seq[seq[seq[float64]]]): Tensor =
+  new(result)
+  result.shape = [len(X), len(X[0]), len(X[0][0])]
+  result.data = X
+  return result
+
+
+proc toMatrix*(X: seq[seq[float64]]): Matrix =
+  new(result)
+  result.shape = [len(X), len(X[0])]
+  result.data = X
+  return result
 
 
 proc zeros*(shape: array[1, int]): Vector =
