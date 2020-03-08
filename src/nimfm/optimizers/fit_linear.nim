@@ -1,6 +1,5 @@
 import ../loss, ../dataset, ../tensor
 
-
 proc fitLinearCD*(w: var Vector, X: CSCDataset, y: seq[float64],
                   yPred: var seq[float64], colNormSq: Vector,
                   alpha: float64, loss: LossFunction): float64 =

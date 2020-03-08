@@ -1,7 +1,6 @@
 import loss, kernels, tensor, metrics
 import math, sugar, random, sequtils, strutils, parseutils
 
-
 type
   FitLowerKind* = enum
     explicit = "explicit",

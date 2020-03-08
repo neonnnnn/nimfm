@@ -1,6 +1,5 @@
 import dataset, tensor, math
 
-
 proc linear*(X: CSCDataset, w: Vector,  kernel: var seq[float64]) =
   let nFeatures = X.nFeatures
   let nSamples = X.nSamples
