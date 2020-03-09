@@ -128,28 +128,22 @@ suite "Test datasets":
   data[2] = @[0.0, 0.0, 0, 0, 0, 0]
   data[3] = @[0.0, 0.0, 0, -5.0, 0.0, 103.2]
   let yTrue: array[nSamples, float] = [-1.0, 2.0, -10, 5.2]
-  # create file
-  var f = open("testsample.svm", fmWrite)
-  for i in 0..<nSamples:
-    f.write(yTrue[i])
-    f.write(' ')
-    for j in 0..<nFeatures:
-      if data[i][j] != 0:
-        f.write(j)
-        f.write(':')
-        f.write(data[i][j])
-        if i < nFeatures-1:
-          f.write(' ')
-    f.write('\n')
-  close(f)
 
+  # create file
+  dumpSVMLightFile("testsample.svm", data, toSeq(yTrue))
 
   test "Test CSRDataset":
     var dataset: CSRDataset
     var y: seq[float]
     loadSVMLightFile("testsample.svm", dataset, y)
     checkDenseCSR(data, dataset)
-  
+
+    dumpSVMLightFile("testsample_dumped.svm", dataset, y)
+    var dataset2: CSRDataset
+    var y2: seq[float]
+    loadSVMLightFile("testsample_dumped.svm", dataset2, y2)
+    checkDenseCSR(data, dataset2)
+
 
   test "Test toCSR":
     var dataset = toCSR(data)
@@ -267,3 +261,6 @@ suite "Test datasets":
 
     checkDenseCSC(data[1..^1], dataset[1..^1])
     checkDenseCSC(data[0..^2], dataset[0..^2])
+
+  removeFile("testsample.svm")
+  removeFile("testsample_dumped.svm")

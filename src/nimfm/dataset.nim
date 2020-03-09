@@ -198,7 +198,7 @@ proc normalize*(X: var CSRDataset, axis=1, norm: NormKind = l2) =
 
 
 proc normalize*(X: var CSCDataset, axis=1, norm: NormKind = l2) =
-  case norm # Leverage the fact that ranspose of CSC is CSR
+  case norm # Leverage the fact that transpose of CSC is CSR
   of l2:
     normalize(X.data, X.indices, X.indptr, 1-axis, X.nFeatures, X.nSamples,
               (x, y) => x + y^2, sqrt)
@@ -477,6 +477,6 @@ proc dumpSVMLightFile*(f: string, X: seq[seq[float64]], y: seq[SomeNumber]) =
     for j, val in X[i]:
       if val != 0.0:
         f.write(fmt" {j+1}:{val}")
-    if i+1 != X.nSamples:
+    if i+1 != len(X):
       f.write("\n")
   f.close()
