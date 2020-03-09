@@ -265,4 +265,4 @@ proc fit*(self: SGD, X: CSRDataset, y: seq[float64],
         fm.P[order, s, j] = P[order, j, s]
     for j in nFeatures..<nFeatures+nAugments:
       for s in 0..<nComponents:
-        fm.P[order, s, j] = P[order, j, s] 
+        fm.P[order, s, j] = P[order, j, s]

@@ -10,13 +10,12 @@ export factorization_machine, loss, dataset, metrics
 export sgd, coordinate_descent
 
 # The followings are for end users
-
 proc echoDataInfo(X: BaseDataset) =
-  echo("   Number of samples : ", X.nSamples)
-  echo("   Number of features: ", X.nFeatures)
-  echo("   Number of nnz     : ", X.nnz)
-  echo("   Maximum value     : ", X.max)
-  echo("   Minimum value     : ", X.min)
+  echo("   Number of samples  : ", X.nSamples)
+  echo("   Number of features : ", X.nFeatures)
+  echo("   Number of non-zeros: ", X.nnz)
+  echo("   Maximum value      : ", X.max)
+  echo("   Minimum value      : ", X.min)
 
 
 proc eval(fm: FactorizationMachine, task: TaskKind, test: string,
@@ -87,6 +86,7 @@ proc test(task: TaskKind, test, load: string, dump = "",
   var fm = load(load, false)
   eval(fm, task, test, predict, nFeatures, verbose)
   if dump != "": fm.dump(dump)
+
 
 when isMainModule:
   import cligen; include cligen/mergeCfgEnv
