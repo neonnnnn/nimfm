@@ -1,6 +1,9 @@
 # nimfm
 A library for factorization machines in [Nim](https://nim-lang.org/).
 
+[![Actions Status](https://github.com/neonnnnn/nimfm/workflows/Build/badge.svg)](https://github.com/neonnnnn/nimfm/actions)
+
+
 Factorization machines (FMs)\[1, 2\] are machine learning models using second-order
 feature combinations (e.g., x1 * x2, x2 * x5) efficiently.
 
