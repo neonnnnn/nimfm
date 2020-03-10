@@ -1,5 +1,9 @@
 import sequtils, sugar, parseutils, math, os, strformat
 
+
+const Integers = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'}
+
+
 type
   BaseDataset* = ref object of RootObj
     nSamples*: int
@@ -158,6 +162,15 @@ func `[]`*(X: CSCDataset, slice: HSlice[int, BackwardsIndex]): CSCDataset =
   result = X[slice.a..(X.nSamples-int(slice.b))]
 
 
+func shuffle*[T](X: CSRDataset, y: seq[T], indices: openarray[int]):
+                 tuple[XShuffled: CSRDataset, yShuffled: seq[T]] =
+  var yShuffled = newSeq[T](len(indices))
+  for ii, i in indices:
+    yShuffled[ii] = y[i]
+  
+  result = (X[indices], yShuffled)
+    
+
 # Normizling function for CSRDataset
 proc normalize(data: var seq[float64], indices, indptr: seq[int],
                axis, nRows, nCols: int, f: (float64, float64)->float64,
@@ -268,6 +281,48 @@ func toCSC*(input: seq[seq[float64]]): CSCDataset =
     nFeatures=nFeatures)
 
 
+proc toCSR*(self: CSCDataset): CSRDataset =
+  let nSamples = self.nSamples
+  let nFeatures = self.nFeatures
+  var data = newSeqWith(self.nnz, 0.0)
+  var indices = newSeqWith(self.nnz, 0)
+  var indptr = newSeqWith(self.nSamples+1, 0)
+  
+  for j in 0..<nFeatures:
+    for (i, val) in self.getCol(j):
+      indptr[i+1] += 1
+  cumsum(indptr)
+  var offsets = newSeqWith(nSamples, 0)
+  for j in 0..<nFeatures:
+    for (i, val) in self.getCol(j):
+      data[indptr[i]+offsets[i]] = val
+      indices[indptr[i] + offsets[i]] = j
+      offsets[i] += 1
+  result = newCSRDataset(data=data, indices=indices, indptr=indptr,
+                         nSamples=nSamples, nFeatures=nFeatures)
+
+
+func toCSC*(self: CSRDataset): CSCDataset =
+  let nSamples = self.nSamples
+  let nFeatures = self.nFeatures
+  var data = newSeqWith(self.nnz, 0.0)
+  var indices = newSeqWith(self.nnz, 0)
+  var indptr = newSeqWith(self.nFeatures+1, 0)
+  
+  for i in 0..<nSamples:
+    for (j, val) in self.getRow(i):
+      indptr[j+1] += 1
+  cumsum(indptr)
+  var offsets = newSeqWith(nFeatures, 0)
+  for i in 0..<nSamples:
+    for (j, val) in self.getRow(i):
+      data[indptr[j]+offsets[j]] = val
+      indices[indptr[j] + offsets[j]] = i
+      offsets[j] += 1
+  result = newCSCDataset(data=data, indices=indices, indptr=indptr,
+                         nSamples=nSamples, nFeatures=nFeatures)
+
+
 func toSeq*(self: CSRDataset): seq[seq[float64]] = 
   let nSamples = self.nSamples
   let nFeatures = self.nFeatures
@@ -350,6 +405,7 @@ proc loadSVMLightFile(f: string, y: var seq[float]):
     raise newException(ValueError, "Negative index is included.")
   let offset = if minIndex == 0: 0 else: 1 # basically assume 1-based
   let nFeatures = maxIndex + 1 - offset
+  
   var data = newSeq[float64](nnz)
   var indices = newSeq[int](nnz)
   var indptr = newSeq[int](nSamples+1)
@@ -480,3 +536,138 @@ proc dumpSVMLightFile*(f: string, X: seq[seq[float64]], y: seq[SomeNumber]) =
     if i+1 != len(X):
       f.write("\n")
   f.close()
+
+
+proc loadUserItemRatingFile*(f: string, X: var CSRDataset, y: var seq[float64]) =
+  var nSamples = 0
+  for line in f.lines:
+    if len(line) < 4:
+      continue
+    nSamples += 1
+
+  var indices = newSeqWith(nSamples*2, 0)
+  var indptr = toSeq(0..<nSamples+1)
+  apply(indptr, x=>2*x)
+  var data = newSeqWith(nSamples*2, 1.0)
+  y = newSeqWith(nSamples, 0.0)
+  
+  var
+    minUser = 1
+    maxUser = 0
+    minItem = 1
+    maxItem = 0
+  
+  var i = 0
+  var start = 0
+  for line in f.lines:
+    if len(line) < 5:
+      continue
+    start = skipUntil(line, Integers, 0)
+    start += parseInt(line, indices[2*i], start)
+
+    start += skipUntil(line, Integers, start)
+    start += parseInt(line, indices[2*i+1], start)
+    
+    start += skipUntil(line, Integers, start)
+    start += parseFloat(line, y[i], start)
+
+    minUser = min(minUser, indices[2*i])
+    maxUser = max(maxUser, indices[2*i])
+    minItem = min(minItem ,indices[2*i+1])
+    maxItem = max(maxItem, indices[2*i+1])
+    i += 1
+  if minUser < 0:
+    raise newException(ValueError, "The minimum user id < 0.")
+  
+  if minItem < 0:
+    raise newException(ValueError, "The minimum item id < 0.")
+  let nUsers = maxUser - minUser + 1
+  let nItems = maxItem - minItem + 1
+
+  for i in 0..<nSamples:
+    indices[2*i] -= minUser
+    indices[2*i+1] += nUsers - minItem
+  X = newCSRDataset(data=data, indices=indices, indptr=indptr,
+                    nFeatures=nUsers+nItems, nSamples=nSamples)
+
+
+proc loadUserItemRatingFile*(f: string, X: var CSCDataset, y: var seq[float64]) =
+  var nSamples = 0
+  var user, item, start: int
+  var
+    minUser = 1
+    maxUser = 0
+    minItem = 1
+    maxItem = 0
+  # compute maxUser, minUser, maxItem, minItem, and nFeatures
+  for line in f.lines:
+    if len(line) < 5:
+      continue
+
+    start = skipUntil(line, Integers, 0)
+    start += parseInt(line, user, start)
+
+    start += skipUntil(line, Integers, start)
+    start += parseInt(line, item, start)
+
+    minUser = min(minUser, user)
+    maxUser = max(maxUser, user)
+    minItem = min(minItem, item)
+    maxItem = max(maxItem, item)
+    nSamples += 1
+
+  if minUser < 0:
+    raise newException(ValueError, "The minimum user id < 0.")
+  if minItem < 0:
+    raise newException(ValueError, "The minimum item id < 0.")
+  
+  let nUsers = maxUser - minUser + 1
+  let nItems = maxItem - minItem + 1
+  let nFeatures = nUsers + nItems
+
+  var indptr = newSeqWith(nFeatures+1, 0)
+  var data = newSeqWith(nSamples*2, 1.0)
+  var indices = newSeqWith(nSamples*2, 0)
+  y = newSeqWith(nSamples, 0.0)
+  var i = 0
+  var j = 0
+  # compute indptr and y
+  for line in f.lines:
+    if len(line) < 5:
+      continue
+
+    start = skipUntil(line, Integers, 0)
+    start += parseInt(line, user, start)
+    j = user - minUser
+    indptr[j+1] += 1
+
+    start += skipUntil(line, Integers, start)
+    start += parseInt(line, item, start)
+    j = item - minItem + nUsers
+    indptr[j+1] += 1
+
+    start += skipUntil(line, Integers, start)
+    start += parseFloat(line, y[i], start)
+    i += 1
+  cumsum(indptr)
+  i = 0
+  var offsets = newSeqWith(nFeatures, 0)
+  for line in f.lines:
+    if len(line) < 5:
+      continue 
+
+    start = skipUntil(line, Integers, 0)
+    start += parseInt(line, user, start)
+    j = user - minUser
+    indices[indptr[j]+offsets[j]] = i
+    offsets[j] += 1
+
+    start += skipUntil(line, Integers, start)
+    start += parseInt(line, item, start)
+    j = item - minItem + nUsers
+    indices[indptr[j]+offsets[j]] = i
+    offsets[j] += 1
+    i += 1
+
+  X = newCSCDataset(data=data, indices=indices, indptr=indptr,
+                    nFeatures=nUsers+nItems, nSamples=nSamples)
