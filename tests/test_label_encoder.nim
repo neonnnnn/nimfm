@@ -1,6 +1,6 @@
 import unittest
-
 import nimfm/utils
+
 suite "Test label encoder":
   let y1 = [4, -3, 100, -3, 4, 100, 100, 4]
   let y1Enc = [1, 0, 2, 0, 1, 2, 2, 1]
@@ -12,8 +12,9 @@ suite "Test label encoder":
   let y3Enc = [0, 1, 2, 3, 4, 5, 6, 7]
   let y3Classes = [0, 1, 2, 3, 4, 5, 6, 7]
 
+
   test "Test transform":
-    var le = newLabelEncoder()
+    var le = newLabelEncoder[int]()
     var yEnc: seq[int]
     le.fit(y1)
     check le.transformed(y1) == y1Enc
@@ -30,8 +31,9 @@ suite "Test label encoder":
     le.transform(y3, yEnc)
     check yEnc == y3Enc
 
+
   test "Test inverse transform":
-    var le = newLabelEncoder()
+    var le = newLabelEncoder[int]()
     var yEnc: seq[int]
 
     le.fit(y1)
@@ -49,8 +51,9 @@ suite "Test label encoder":
     le.inverseTransform(y3Enc, yEnc)
     check yEnc == y3
 
+
   test "Test classes":
-    var le = newLabelEncoder()
+    var le = newLabelEncoder[int]()
 
     le.fit(y1)
     check le.classes == y1Classes
