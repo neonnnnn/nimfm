@@ -11,12 +11,13 @@ nimfm provides
 
  - Not-only second-order but also higher-order factorization machines \[3\].
  - Coordinate descent (a.k.a alternative least squares) solver.
- - Stochastic gradient descent solver with some step-size scheduling methods.
+ - Stochastic gradient descent solver with some step-size scheduling methods \[4\].
  - Various loss functions: Squared, SquaredHinge, and Logistic.
  - Binary file for end users.
 
 ## Data format
 nimfm uses its own data type for datasets: `CSRDataset` and `CSCDataset` and provides procs for loading **[libsvm](https://www.csie.ntu.edu.tw/~cjlin/libsvm/)/[svmlight](http://svmlight.joachims.org/) format** file as such datasets.
+`CSRDataset` is for `SGD` solver and `CSCDataset` is for `CoordinateDescent` solver.
 The two-dimensional sequence `seq[seq[float64]]` is easily transformed to such
 datasets by `toCSR` and `toCSC`.
 
