@@ -2,6 +2,7 @@ import unittest
 import nimfm/dataset
 import os, sequtils, sugar, math
 
+
 proc checkDenseCSR(dense: seq[seq[float64]], sparse: CSRDataset) =
   let nSamples = sparse.nSamples
   let nFeatures = sparse.nFeatures
@@ -148,6 +149,10 @@ suite "Test datasets":
   test "Test toCSR":
     var dataset = toCSR(data)
     checkDenseCSR(data, dataset)
+    var datasetCSC: CSCDataset
+    var y: seq[float]
+    loadSVMLightFile("testsample.svm", datasetCSC, y)
+    checkDenseCSR(data, toCSR(datasetCSC))
 
 
   test "Test normalize l1 for CSR":
@@ -212,6 +217,9 @@ suite "Test datasets":
     var dataset = toCSC(data)
     var y: seq[float]
     checkDenseCSC(data, dataset)
+    var datasetCSR: CSRDataset
+    loadSVMLightFile("testsample.svm", datasetCSR, y)
+    checkDenseCSC(data, toCSC(datasetCSR))
 
 
   test "Test normalize L1 for CSC":
@@ -250,7 +258,6 @@ suite "Test datasets":
   test "Test hstack for CSC":
     let dataset = hstack(@[toCSC(data), toCSC(data), toCSC(data)])
     checkDenseCSC(hstack(@[data, data, data]), dataset)
-
 
 
   test "Test slice for CSC":

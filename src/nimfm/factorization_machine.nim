@@ -129,6 +129,7 @@ proc nOrders(self: FactorizationMachine): int =
 
 proc decisionFunction*[Dataset](self: FactorizationMachine, X: Dataset):
                                 seq[float64] =
+  ## Returns the model outputs as seq[float64].
   self.checkInitialized()
   let nSamples: int = X.n_samples
   let nComponents: int = self.nComponents
@@ -151,11 +152,15 @@ proc decisionFunction*[Dataset](self: FactorizationMachine, X: Dataset):
 
 
 proc predict*[Dataset](self: FactorizationMachine, X: Dataset): seq[int] =
+  ## Returns the sign vector of the model outputs as seq[int].
   result = decisionFunction(self, X).map(x=>sgn(x))
 
 
-proc init*[Dataset](self: FactorizationMachine, X: Dataset) =
-  if not (self.warmStart and self.isInitalized):
+proc init*[Dataset](self: FactorizationMachine, X: Dataset, force=false) =
+  ## Initialize the factorization machines.
+  ## If force=false, fm is already initialized, and warmStart=true,
+  ## fm will not be initialized.
+  if force or not (self.warmStart and self.isInitalized):
     let nFeatures: int = X.nFeatures
     randomize(self.randomState)
 
@@ -179,6 +184,9 @@ proc checkTarget*(self: FactorizationMachine, y: seq[SomeNumber]):
 
 proc score*[Dataset](self: FactorizationMachine, X: Dataset,
                      y: seq[float64]): float64 =
+  ## Returns the score between the model outputs and true targets.
+  ## Computes root mean squared error when task=regression (lower is better).
+  ## Computes accuracy when task=classification (higher is better). 
   let yPred = self.decisionFunction(X)
   case self.task
   of regression:
@@ -189,6 +197,7 @@ proc score*[Dataset](self: FactorizationMachine, X: Dataset,
 
 
 proc dump*(self: FactorizationMachine, fname: string) =
+  ## Dumps the fitted factorization machines.
   self.checkInitialized()
   let nComponents = self.P.shape[1]
   let nFeatures = self.P.shape[2] - self.nAugments
@@ -222,6 +231,7 @@ proc dump*(self: FactorizationMachine, fname: string) =
 
 
 proc load*(fname: string, warmStart: bool): FactorizationMachine =
+  ## Loads the fitted factorization machines.
   new(result)
   var f: File = open(fname, fmRead)
   var nFeatures: int

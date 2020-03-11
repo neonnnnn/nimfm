@@ -9,6 +9,7 @@ type
 
 proc newCoordinateDescent*(maxIter = 100, verbose = true, tol = 1e-3):
                            CoordinateDescent =
+  ## Creates new CoordinateDescent.
   ## maxIter: Maximum number of iteration. In one iteration. \
   ## all parameters are updated once by using all samples.
   ## verbose: Whether to print information on optimization processes.
@@ -149,9 +150,9 @@ proc epochDeg2(X: CSCDataset, y: seq[float64], yPred: var seq[float64],
 
 proc fit*(self: CoordinateDescent, X: CSCDataset, y: seq[float64],
           fm: var FactorizationMachine) =
+  ## Fits the factorization machine on X and y by coordinate descent.
   fm.init(X)
   let y = fm.checkTarget(y)
-  var it: int
   let
     nSamples = X.nSamples
     nFeatures = X.nFeatures
@@ -173,6 +174,7 @@ proc fit*(self: CoordinateDescent, X: CSCDataset, y: seq[float64],
     dA: Vector = zeros([degree])
     cacheDeg2: Vector = zeros([nSamples])
     colNormSq: Vector = zeros([nFeatures])
+    isConverged = false
   
   # init caches
   for i in 0..<nSamples:
@@ -222,6 +224,7 @@ proc fit*(self: CoordinateDescent, X: CSCDataset, y: seq[float64],
 
     if viol < self.tol:
       if self.verbose: echo("Converged at iteration ", it, ".")
+      isConverged = true
       break
-  if it == self.maxIter and self.verbose:
+  if not isConverged and self.verbose:
     echo("Objective did not converge. Increase maxIter.")
