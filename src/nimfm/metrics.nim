@@ -1,6 +1,5 @@
 import math, sequtils
 
-
 proc rmse*(yPred, y: seq[float64]): float64 =
   if len(yPred) != len(y):
     let msg = "len(yPred)=" & $len(yPred) & ", but len(y)=" & $len(y)

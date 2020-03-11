@@ -19,6 +19,7 @@ type
 
 proc newSGD*(eta0 = 0.01, scheduling = optimal, power = 1.0, maxIter = 100,
              verbose = true, tol = 1e-3, shuffle = true): SGD =
+  ## Creates new SGD.
   ## eta0: Step-size parameter.
   ## scheduling: How to change the step-size.
   ##  - constant: eta = eta0,
@@ -135,9 +136,9 @@ proc computeAnovaDeg2(P: Tensor, X: CSRDataset,
 
 proc fit*(self: SGD, X: CSRDataset, y: seq[float64],
           fm: var FactorizationMachine) =
+  ## Fits the factorization machine on X and y by stochastic gradient descent.
   fm.init(X)
   let y = fm.checkTarget(y)
-  var epoch: int
   let
     nSamples = X.nSamples
     nFeatures = X.nFeatures
@@ -161,6 +162,7 @@ proc fit*(self: SGD, X: CSRDataset, y: seq[float64],
     indices = toSeq(0..<nSamples)
     P: Tensor = zeros([nOrders, nFeatures+nAugments, nComponents])
     dA: Tensor = zeros(P.shape)
+    isConverged = false
   
   if not fm.warmstart:
     self.it = 1
@@ -249,9 +251,10 @@ proc fit*(self: SGD, X: CSRDataset, y: seq[float64],
       stdout.flushFile()
     if viol < self.tol:
       if self.verbose: echo("Converged at epoch ", epoch, ".")
+      isConverged = true
       break
-
-  if epoch == self.maxIter and self.verbose:
+  
+  if not isConverged and self.verbose:
     echo("Objective did not converge. Increase maxIter.")
 
   # finalize
@@ -265,4 +268,4 @@ proc fit*(self: SGD, X: CSRDataset, y: seq[float64],
         fm.P[order, s, j] = P[order, j, s]
     for j in nFeatures..<nFeatures+nAugments:
       for s in 0..<nComponents:
-        fm.P[order, s, j] = P[order, j, s] 
+        fm.P[order, s, j] = P[order, j, s]

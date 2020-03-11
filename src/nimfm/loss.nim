@@ -52,4 +52,3 @@ proc dloss*(lossFunc: LossFunction, p, y: float64): float64 =
       return -y * exp(-z) / (1+exp(-z))
     else:
       return y*exp(z)/(exp(z)+1) - y
-
