@@ -1,4 +1,4 @@
-import loss, kernels, tensor, metrics
+import loss, kernels, tensor, metrics, utils
 import math, sugar, random, sequtils, strutils, parseutils
 
 type
@@ -66,7 +66,7 @@ proc newFactorizationMachine*(task: TaskKind, degree = 2, n_components = 30,
   ## nComponents: Number of basis vectors (a.k.a rank hyper-parameter).
   ## alpha0: Regularization strength for intercept.
   ## alpha: Regularization strength for linear term.
-  ## beta: Regularization strengt for higher-order weights.
+  ## beta: Regularization strength for higher-order weights.
   ## loss: Loss function.
   ##   - Squared: 1/2 (y-p)**2,
   ##   - SquaredHinge: (max(0, 1-y*p))**2,
@@ -156,8 +156,15 @@ proc predict*[Dataset](self: FactorizationMachine, X: Dataset): seq[int] =
   result = decisionFunction(self, X).map(x=>sgn(x))
 
 
+proc predictProba*[Dataset](self: FactorizationMachine, X: Dataset):
+                            seq[float64] =
+  ## Returns probabilities that each instance belongs to positive class.
+  ## It shoud be used only when task=classification.
+  result = decisionFunction(self, X).map(expit)
+
+
 proc init*[Dataset](self: FactorizationMachine, X: Dataset, force=false) =
-  ## Initialize the factorization machines.
+  ## Initializes the factorization machine.
   ## If force=false, fm is already initialized, and warmStart=true,
   ## fm will not be initialized.
   if force or not (self.warmStart and self.isInitalized):
@@ -175,6 +182,8 @@ proc init*[Dataset](self: FactorizationMachine, X: Dataset, force=false) =
 
 proc checkTarget*(self: FactorizationMachine, y: seq[SomeNumber]):
                   seq[float64] =
+  ## Transforms targets vector to float for regression or
+  ## to sign for classification.
   case self.task
   of classification:
     result = y.map(x => float(sgn(x)))
@@ -190,14 +199,13 @@ proc score*[Dataset](self: FactorizationMachine, X: Dataset,
   let yPred = self.decisionFunction(X)
   case self.task
   of regression:
-    result = rmse(yPred, y)
+    result = rmse(y, yPred)
   of classification:
-    result = accuracy(yPred.map(x=>sgn(x)), y.map(x=>sgn(x)))
-
+    result = accuracy(y.map(x=>sgn(x)), yPred.map(x=>sgn(x)))
 
 
 proc dump*(self: FactorizationMachine, fname: string) =
-  ## Dumps the fitted factorization machines.
+  ## Dumps the fitted factorization machine.
   self.checkInitialized()
   let nComponents = self.P.shape[1]
   let nFeatures = self.P.shape[2] - self.nAugments
@@ -231,7 +239,7 @@ proc dump*(self: FactorizationMachine, fname: string) =
 
 
 proc load*(fname: string, warmStart: bool): FactorizationMachine =
-  ## Loads the fitted factorization machines.
+  ## Loads the fitted factorization machine.
   new(result)
   var f: File = open(fname, fmRead)
   var nFeatures: int

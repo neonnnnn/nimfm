@@ -119,6 +119,6 @@ proc score*(self: FMSlow, X: Matrix, y: seq[float64]): float64 =
   let yPred = self.decisionFunction(X)
   case self.task
   of regression:
-    result = rmse(yPred, y)
+    result = rmse(y, yPred)
   of classification:
-    result = accuracy(yPred.map(x=>sgn(x)), y.map(x=>sgn(x)))
+    result = accuracy(y.map(x=>sgn(x)), yPred.map(x=>sgn(x)))

@@ -28,10 +28,10 @@ proc eval(fm: FactorizationMachine, task: TaskKind, test: string,
   let yPred = fm.decisionFunction(X)
   case task
   of regression:
-    echo("Test RMSE: ", rmse(yPred, y))
+    echo("Test RMSE: ", rmse(y, yPred))
   of classification:
     echo("Test Accuracy: ",
-         accuracy(yPred.map(x=>sgn(x)), y.map(x=>sgn(x))))
+         accuracy(y.map(x=>sgn(x)), yPred.map(x=>sgn(x))))
   if predict != "":
     var f: File = open(predict, fmWrite)
     for val in fm.decisionFunction(X):
