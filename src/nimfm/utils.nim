@@ -1,4 +1,4 @@
-import tables, algorithm
+import tables, algorithm, sequtils, sugar, math
 
 type
   LabelEncoderObj[T] = object
@@ -7,6 +7,21 @@ type
     invTable*: TableRef[int, T]
 
   LabelEncoder*[T] = ref LabelEncoderObj[T]
+
+
+proc argsort*[T](a: T, order=SortOrder.Ascending): seq[int] =
+  result = toSeq(0..<a.len)
+  case order
+  of SortOrder.Ascending: 
+    sort(result,  proc(i, j: int ): int = cmp(a[i], a[j]))
+  of SortOrder.Descending:
+    sort(result,  proc(i, j: int ): int = -cmp(a[i], a[j]))
+
+
+proc expit*(x: float64): float64  =  exp(min(0.0, x)) / (1.0 + exp(-abs(x)))
+
+
+proc expit*(a: openarray[float64]): seq[float64] = a.map(expit)    
 
 
 proc newLabelEncoder*[T](): LabelEncoder[T] =
