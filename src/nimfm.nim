@@ -1,13 +1,19 @@
 import nimfm/factorization_machine
+import nimfm/convex_factorization_machine
+import nimfm/fm_base
 import nimfm/optimizers/coordinate_descent
 import nimfm/optimizers/sgd
+import nimfm/optimizers/greedy_coordinate_descent
 import nimfm/loss
 import nimfm/dataset
 import nimfm/metrics
-import tables, strutils, sugar, sequtils, math
+import nimfm/tensor
 
-export factorization_machine, loss, dataset, metrics
+import strutils, sugar, sequtils, math
+
+export fm_base, factorization_machine, loss, dataset, metrics, tensor
 export sgd, coordinate_descent
+export convex_factorization_machine, greedy_coordinate_descent
 
 # The followings are for end users
 proc echoDataInfo(X: BaseDataset) =
@@ -19,12 +25,12 @@ proc echoDataInfo(X: BaseDataset) =
 
 
 proc eval(fm: FactorizationMachine, task: TaskKind, test: string,
-          predict: string, nFeatures: int, verbose: bool) =
+          predict: string, nFeatures: int, verbose: int) =
   var X: CSRDataset
   var y: seq[float64]
-  if verbose: echo("Load test data.")
+  if verbose > 0: echo("Load test data.")
   loadSVMLightFile(test, X, y, nFeatures)
-  if verbose: echoDataInfo(X)
+  if verbose > 0: echoDataInfo(X)
   let yPred = fm.decisionFunction(X)
   case task
   of regression:
@@ -45,7 +51,7 @@ proc train(task: TaskKind, train: string, test = "", degree = 2,
            fitIntercept = true, scale = 0.1, randomState = 1,
            solver = "cd", maxIter = 100, tol = 1e-5, eta0 = 0.1,
            scheduling = optimal, powerIt = 1.0, dump = "", load = "",
-           predict = "", nFeatures = -1, verbose = true) =
+           predict = "", nFeatures = -1, verbose = 1) =
   ## training a factorization machine
   var fm: FactorizationMachine
   if load == "":
@@ -56,20 +62,20 @@ proc train(task: TaskKind, train: string, test = "", degree = 2,
       randomState = randomState, scale = scale
     )
   else:
-    fm = load(load, true)
+    load(fm, load, true)
   case solver
     of "cd", "als":
       var X: CSCDataset
       var y: seq[float64]
       loadSVMLightFile(train, X, y, nFeatures)
-      if verbose: echoDataInfo(X)
+      if verbose > 0: echoDataInfo(X)
       var optim = newCoordinateDescent(maxIter, verbose, tol)
       optim.fit(X, y, fm)
     of "sgd":
       var X: CSRDataset
       var y: seq[float64]
       loadSVMLightFile(train, X, y, nFeatures)
-      if verbose: echoDataInfo(X)
+      if verbose > 0: echoDataInfo(X)
       var optim = newSGD(eta0, scheduling, powerIt, maxIter, verbose, tol)
       optim.fit(X, y, fm)
     else:
@@ -81,9 +87,10 @@ proc train(task: TaskKind, train: string, test = "", degree = 2,
 
 
 proc test(task: TaskKind, test, load: string, dump = "",
-          predict = "", nFeatures = -1, verbose = true) =
+          predict = "", nFeatures = -1, verbose = 1) =
   ## test a factorization machine
-  var fm = load(load, false)
+  var fm: FactorizationMachine
+  load(fm, load, false)
   eval(fm, task, test, predict, nFeatures, verbose)
   if dump != "": fm.dump(dump)
 
@@ -124,8 +131,8 @@ Run "$command help" to get *comprehensive* help.$ifVersion"""
              "Ignored when --task:r",
      "fit-lower": "Whether and how to fit lower-order terms. " &
                   "explicit, augment, or none.",
-     "fit-linear": "Whether to fit linear term or not",
-     "fit-intercept": "Whether to fit intercept term or not",
+     "fit-linear": "Whether to fit linear term or not (0 or 1)",
+     "fit-intercept": "Whether to fit intercept term or not (0 or 1)",
      "scale": "Standard derivation for initialization of interaction weights",
      "random-state": "Seed od the pseudo random number generator. " &
                      "0 is not allowed.",
@@ -141,7 +148,7 @@ Run "$command help" to get *comprehensive* help.$ifVersion"""
      "predict": "Filename for prediction of test data",
      "n-features": "Number of features. If -1 (default), the maxium index " &
                    "in training data is used.",
-     "verbose": "Whether to print information"
+     "verbose": "Verbosity level (0 or 1)."
     },
     usage = hluse,
     short = {"": '\0'}],
