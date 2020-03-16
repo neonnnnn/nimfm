@@ -2,7 +2,7 @@ import ../dataset, ../factorization_machine
 
 type
   BaseOptimizerObj = object of RootObj
-    verbose*: bool
+    verbose*: int
     tol*: float64
     maxIter*: int
 

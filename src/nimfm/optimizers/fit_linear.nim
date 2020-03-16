@@ -12,7 +12,7 @@ proc fitLinearCD*(w: var Vector, X: CSCDataset, y: seq[float64],
   for j in 0..<nFeatures:
     update = alpha * w[j]
     for (i, val) in X.getCol(j):
-      update += loss.dloss(yPred[i], y[i]) * val
+      update += loss.dloss(y[i], yPred[i]) * val
     invStepSize = loss.mu * colNormSq[j] + alpha
     if invStepSize < 1e-12: 
       continue
@@ -28,7 +28,7 @@ proc fitInterceptCD*(intercept: var float64, y: seq[float64],
                      alpha0: float64, loss: LossFunction): float64 =
   result = alpha0 * intercept
   for i in 0..<nSamples:
-    result += loss.dloss(yPred[i], y[i])
+    result += loss.dloss(y[i], yPred[i])
   result /= loss.mu * float(nSamples) + alpha0
   intercept -= result
   for i in 0..<nSamples:

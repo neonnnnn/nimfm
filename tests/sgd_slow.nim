@@ -1,5 +1,5 @@
 import nimfm/loss, nimfm/tensor
-import nimfm/optimizers/base, nimfm/optimizers/sgd
+import nimfm/optimizers/optimizer_base, nimfm/optimizers/sgd
 import sequtils, math, random
 import kernels_slow, fm_slow, utils
 
@@ -13,7 +13,7 @@ type
 
 
 proc newSGDSlow*(eta0 = 0.01, scheduling = optimal, power = 1.0, maxIter = 100,
-                 verbose = true, tol = 1e-3, shuffle = true): SGDSlow =
+                 verbose = 1, tol = 1e-3, shuffle = true): SGDSlow =
   result = SGDSlow(eta0: eta0, scheduling: scheduling, power: power, it: 1,
                    maxIter: maxIter, tol: tol, verbose: verbose,
                    shuffle: shuffle)
@@ -61,7 +61,7 @@ proc computeAnovaGrad(P: Tensor, X: Matrix, i, degree, order, nAugments: int,
     nFeatures = X.shape[1]
   # compute anova kernel
   for s in 0..<nComponents:
-    result += anovaSlow(X, P, i, degree, order, s, nFeatures, nAugments)
+    result += anovaSlow(X, P[order], i, degree, s, nFeatures, nAugments)
 
   # compute derivatives
   computeDerivatives(P, X, dA, i, degree, order, nAugments)
@@ -102,9 +102,9 @@ proc fit*(self: SGDSlow, X: Matrix, y: seq[float64], fm: var FMSlow) =
       for order in 0..<nOrders:
         yPred += computeAnovaGrad(fm.P, X, i, degree-order, order, 
                                   nAugments, dA)
-      runningLoss += loss.loss(yPred, y[i])
+      runningLoss += loss.loss(y[i], yPred)
       # update parameters
-      let dL = loss.dloss(yPred, y[i])
+      let dL = loss.dloss(y[i], yPred)
 
       if fitIntercept:
         let update = self.getEta(alpha0) * (dL + alpha0 * fm.intercept)

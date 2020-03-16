@@ -1,4 +1,4 @@
-import nimfm/loss, nimfm/tensor, nimfm/optimizers/base
+import nimfm/loss, nimfm/tensor, nimfm/optimizers/optimizer_base
 import sequtils, math
 import fm_slow, kernels_slow, fit_linear_slow, utils
 
@@ -6,7 +6,7 @@ type
   CoordinateDescentSlow* = ref object of BaseCSCOptimizer
     ## Coordinate descent solver for test.
 
-proc newCoordinateDescentSlow*(maxIter = 100, verbose = true, tol = 1e-3):
+proc newCoordinateDescentSlow*(maxIter = 100, verbose = 1, tol = 1e-3):
                                CoordinateDescentSlow =
   result = CoordinateDescentSlow(maxIter: maxIter, tol: tol, verbose: verbose)
 
@@ -30,7 +30,7 @@ proc predict(P: Tensor, w: Vector, intercept: float64, X: Matrix,
   for order in 0..<nOrders:
     for s in 0..<nComponents:
       for i in 0..<nSamples:
-        let anova = anovaSlow(X, P, i, degree-order, order,
+        let anova = anovaSlow(X, P[order], i, degree-order,
                               s, nFeatures, nAugments)
         yPred[i] += anova
 
@@ -66,7 +66,7 @@ proc update(P: Tensor, X: Matrix, y: seq[float64], yPred: seq[float64],
   
   computeDerivatives(P, X, dA, degree, order, s, j, nAugments)
   for i in 0..<nSamples:
-    result += loss.dloss(yPred[i], y[i]) * dA[i]
+    result += loss.dloss(y[i], yPred[i]) * dA[i]
     invStepSize += dA[i]^2
 
   invStepSize = invStepSize*loss.mu + beta

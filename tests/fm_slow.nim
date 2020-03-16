@@ -1,6 +1,9 @@
 import nimfm/loss, nimfm/tensor, nimfm/metrics, nimfm/factorization_machine
+import nimfm/fm_base
 import sugar, random, sequtils, math
 import utils
+
+export nAugments
 
 
 type
@@ -41,24 +44,6 @@ proc newFMSlow*(task: TaskKind, degree = 2, n_components = 30, alpha0 = 1e-6,
   result.randomState = randomState
   result.scale = scale
   result.isInitalized = false
-
-
-proc nAugments*(self: FMSlow): int =
-  case self.fitLower
-  of explicit, none:
-    result = 0
-  of augment:
-    result = if self.fitLinear: self.degree-2 else: self.degree-1
-
-
-proc nOrders(self: FMSlow): int =
-  if self.degree == 1: result = 0
-  else:
-    case self.fitLower
-    of explicit:
-      result = self.degree-1
-    of none, augment:
-      result = 1
 
 
 proc decisionFunction*(self: FMSlow, X: Matrix): seq[float64] =

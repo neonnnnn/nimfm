@@ -22,7 +22,7 @@ proc newLossFunction*(kind: LossFunctionKind): LossFunction =
   result = LossFunction(kind: kind, mu: mu)
 
 
-proc loss*(lossFunc: LossFunction, p, y: float64): float64 =
+proc loss*(lossFunc: LossFunction, y, p: float64): float64 =
   case lossFunc.kind
   of Squared: return 0.5 * (p-y)^2
   of SquaredHinge:
@@ -39,7 +39,7 @@ proc loss*(lossFunc: LossFunction, p, y: float64): float64 =
       return ln(exp(z)+1) - z
 
 
-proc dloss*(lossFunc: LossFunction, p, y: float64): float64 =
+proc dloss*(lossFunc: LossFunction, y, p: float64): float64 =
   case lossFunc.kind
   of Squared: return p-y
   of SquaredHinge:

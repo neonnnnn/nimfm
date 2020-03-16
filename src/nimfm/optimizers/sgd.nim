@@ -1,5 +1,5 @@
-import ../loss, ../dataset, ../tensor, ../factorization_machine
-import fit_linear, base
+import ../loss, ../dataset, ../tensor, ../factorization_machine, ../fm_base
+import fit_linear, optimizer_base
 import sequtils, math, random, strformat, strutils
 
 type
@@ -18,7 +18,7 @@ type
 
 
 proc newSGD*(eta0 = 0.01, scheduling = optimal, power = 1.0, maxIter = 100,
-             verbose = true, tol = 1e-3, shuffle = true): SGD =
+             verbose = 1, tol = 1e-3, shuffle = true): SGD =
   ## Creates new SGD.
   ## eta0: Step-size parameter.
   ## scheduling: How to change the step-size.
@@ -51,13 +51,13 @@ proc getEta(self: SGD, reg: float64): float64 {.inline.} =
     result = 1.0 / (reg * toFloat(self.it))
 
 
-proc computeAnova(P: Tensor, X: CSRDataset,
-                  i, degree, order, nAugments: int, A: var Matrix,
-                  dA: var Tensor, dAcache: var Vector,
+proc computeAnova(P: Matrix, X: CSRDataset,
+                  i, degree, nAugments: int, A: var Matrix,
+                  dA: var Matrix, dAcache: var Vector,
                   PScaling: float64, PScalings: seq[float64]): float64 =
   result = 0.0
   let
-    nComponents = P.shape[2]
+    nComponents = P.shape[1]
     nFeatures = X.nFeatures
   for s in 0..<nComponents:
     A[s, 0] = 1.0
@@ -67,14 +67,14 @@ proc computeAnova(P: Tensor, X: CSRDataset,
   # compute anova kernel
   for (j, val) in X.getRow(i):
     for s in 0..<nComponents:
-      P[order, j, s] *= PScaling / PScalings[j]
+      P[j, s] *= PScaling / PScalings[j]
       for t in 0..<degree:
-        A[s, degree-t] += A[s, degree-t-1] * P[order, j, s] * val
+        A[s, degree-t] += A[s, degree-t-1] * P[j, s] * val
   # for augmented features
   for j in nFeatures..<(nFeatures+nAugments):
     for s in 0..<nComponents:
       for t in 0..<degree:
-        A[s, degree-t] += A[s, degree-t-1] * P[order, j, s]
+        A[s, degree-t] += A[s, degree-t-1] * P[j, s]
 
   for s in 0..<nComponents:
     result += A[s, degree]
@@ -84,25 +84,25 @@ proc computeAnova(P: Tensor, X: CSRDataset,
     for s in 0..<nComponents:
       dAcache[0] = val
       for t in 1..<degree:
-        dAcache[t] = val * (A[s, t] - P[order, j, s] * dAcache[t-1])
-      dA[order, j, s] = dAcache[degree-1]
+        dAcache[t] = val * (A[s, t] - P[j, s] * dAcache[t-1])
+      dA[j, s] = dAcache[degree-1]
   
   # for augmented features
   for j in nFeatures..<(nFeatures+nAugments):
     for s in 0..<nComponents:
       dAcache[0] = 1.0
       for t in 1..<degree:
-        dAcache[t] = A[s, t] - P[order, j, s] * dAcache[t-1]
-      dA[order, j, s] = dAcache[degree-1]
+        dAcache[t] = A[s, t] - P[j, s] * dAcache[t-1]
+      dA[j, s] = dAcache[degree-1]
 
 
-proc computeAnovaDeg2(P: Tensor, X: CSRDataset,
-                      i, order, nAugments: int, A: var Matrix,
-                      dA: var Tensor, PSCaling: float64,
+proc computeAnovaDeg2(P: Matrix, X: CSRDataset,
+                      i, nAugments: int, A: var Matrix,
+                      dA: var Matrix, PSCaling: float64,
                       PSCalings: seq[float64]): float64 =
   result = 0.0
   let
-    nComponents = P.shape[2]
+    nComponents = P.shape[1]
     nFeatures = X.nFeatures
   for s in 0..<nComponents:
     A[s, 0] = 1
@@ -111,14 +111,14 @@ proc computeAnovaDeg2(P: Tensor, X: CSRDataset,
   # compute anova kernel
   for (j, val) in X.getRow(i):
     for s in 0..<nComponents:
-      P[order, j, s] *= PSCaling / PSCalings[j]
-      A[s, 1] += val * P[order, j, s]
-      A[s, 2] += (val*P[order, j, s])^2
+      P[j, s] *= PSCaling / PSCalings[j]
+      A[s, 1] += val * P[j, s]
+      A[s, 2] += (val*P[j, s])^2
   # for augmented features
   if nAugments == 1:
     for s in 0..<nComponents:
-      A[s, 1] += P[order, nFeatures, s]
-      A[s, 2] += P[order, nFeatures, s]^2
+      A[s, 1] += P[nFeatures, s]
+      A[s, 2] += P[nFeatures, s]^2
 
   for s in 0..<nComponents:
     A[s, 2] = (A[s, 1]^2 - A[s, 2])/2
@@ -127,11 +127,11 @@ proc computeAnovaDeg2(P: Tensor, X: CSRDataset,
   # compute derivatives
   for (j, val) in X.getRow(i):
     for s in 0..<nComponents:
-      dA[order, j, s] = val * (A[s, 1] - P[order, j, s]*val)
+      dA[j, s] = val * (A[s, 1] - P[j, s]*val)
   # for augmented features
   if nAugments == 1:
     for s in 0..<nComponents:
-      dA[order, nFeatures, s] = A[s, 1] - P[order, nFeatures, s]
+      dA[nFeatures, s] = A[s, 1] - P[nFeatures, s]
 
 
 proc fit*(self: SGD, X: CSRDataset, y: seq[float64],
@@ -186,15 +186,15 @@ proc fit*(self: SGD, X: CSRDataset, y: seq[float64],
         yPred += fm.w[j] * val
       for order in 0..<nOrders:
         if (degree-order) > 2:
-          yPred += computeAnova(P, X, i, degree-order, order, nAugments, 
-                                A, dA, dACache, PScaling, PScalings)
+          yPred += computeAnova(P[order], X, i, degree-order, nAugments, 
+                                A, dA[order], dACache, PScaling, PScalings)
         else:
-          yPred += computeAnovaDeg2(P, X, i, order, nAugments, A,
-                                    dA, PScaling, PScalings)
-      runningLoss += loss.loss(yPred, y[i])
+          yPred += computeAnovaDeg2(P[order], X, i, nAugments, A,
+                                    dA[order], PScaling, PScalings)
+      runningLoss += loss.loss(y[i], yPred)
 
       # update parameters
-      let dL = loss.dloss(yPred, y[i])
+      let dL = loss.dloss(y[i], yPred)
 
       if fitIntercept:
         let update = self.getEta(alpha0) * (dL + alpha0 * fm.intercept)
@@ -242,7 +242,7 @@ proc fit*(self: SGD, X: CSRDataset, y: seq[float64],
       inc(self.it)
 
     # one epoch done
-    if self.verbose:
+    if self.verbose > 0:
       runningLoss /= float(nSamples)
       stdout.write(fmt"Epoch: {align($(epoch+1), len($self.maxIter))}")
       stdout.write(fmt"   Violation: {viol:1.4e}")
@@ -250,11 +250,11 @@ proc fit*(self: SGD, X: CSRDataset, y: seq[float64],
       stdout.write("\n")
       stdout.flushFile()
     if viol < self.tol:
-      if self.verbose: echo("Converged at epoch ", epoch, ".")
+      if self.verbose > 0: echo("Converged at epoch ", epoch, ".")
       isConverged = true
       break
   
-  if not isConverged and self.verbose:
+  if not isConverged and self.verbose > 0:
     echo("Objective did not converge. Increase maxIter.")
 
   # finalize

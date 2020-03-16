@@ -14,7 +14,7 @@ proc fitLinearCD*(w: var Vector, X: Matrix, y: seq[float64],
   for j in 0..<nFeatures:
     update = alpha * w[j]
     for i in 0..<nSamples:
-      update += loss.dloss(yPred[i], y[i]) * X[i, j]
+      update += loss.dloss(y[i], yPred[i]) * X[i, j]
     invStepSize = loss.mu * colNormSq[j] + alpha
     update /= invStepSize
     result += abs(update)
@@ -28,7 +28,7 @@ proc fitInterceptCD*(intercept: var float64, y: seq[float64],
                      alpha0: float64, loss: LossFunction): float64 =
   result = alpha0 * intercept
   for i in 0..<nSamples:
-    result += loss.dloss(yPred[i], y[i])
+    result += loss.dloss(y[i], yPred[i])
   result /= loss.mu * float(nSamples) + alpha0
   intercept -= result
   for i in 0..<nSamples:

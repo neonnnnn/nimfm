@@ -27,16 +27,16 @@ suite "Test ANOVA Kernel Computation":
     for m in 0..<nAug+1:
       for degree in 2..<6:
         for s in 0..<k:
-          anova(XCSC, P, K, degree, 0, s, m)
+          anova(XCSC, P[0], K, degree, s, m)
           for i in 0..<n:
-            let expect = anovaSlow(XMat, P, i, degree, 0, s, d, m)
+            let expect = anovaSlow(XMat, P[0], i, degree, s, d, m)
             check abs(K[i, degree] -  expect) < 1e-6
 
   test "Test ANOVA Kernel for CSR":
     for m in 0..<nAug+1:
       for degree in 2..<6:
         for s in 0..<k:
-          anova(XCSR, P, K, degree, 0, s, m)
+          anova(XCSR, P[0], K, degree, s, m)
           for i in 0..<n:
-            let expect = anovaSlow(XMat, P, i, degree, 0, s, d, m)
+            let expect = anovaSlow(XMat, P[0], i, degree, s, d, m)
             check abs(K[i, degree] - expect) < 1e-6
