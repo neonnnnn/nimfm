@@ -66,8 +66,6 @@ proc powerIteration(X: CSCDataset, dL: Vector, p, cache: var Vector,
         pj += val * cache[i]
         if ignoreDiag:
           pj -= dL[i]*p[j]*val^2
-      if ignoreDiag:
-        pj *= 0.5
       ev += pj*p[j]
       p[j] = pj
     p /= norm(p, 2)
@@ -150,8 +148,11 @@ proc fitZ(self: GreedyCoordinateDescent, X: CSCDataset, y: seq[float64],
           break
       # add new row
       if sNew == len(lams):
-        lams.add(0)
+        lams.add(0.0)
         P.addRow(p)
+      else: # substitute
+        for i in 0..<len(p):
+          P[sNew, i] = p[i]
       if ignoreDiag: anova(X, P, A, 2, sNew, 0)
       else: poly(X, P, A, 2, sNew, 0)
 
@@ -164,9 +165,9 @@ proc fitZ(self: GreedyCoordinateDescent, X: CSCDataset, y: seq[float64],
           K[sNew, i] = cache[i]
       # fit lams[sNew]
       fitLams(lams, sNew, beta, K, dL, loss.mu)
-      for i in 0..<nSamples:
-        yPred[i] += lams[sNew] * K[sNew, i]
       if lams[sNew] != 0.0:
+        for i in 0..<nSamples:
+          yPred[i] += lams[sNew] * K[sNew, i]
         nComponents += 1
         addBase = true
     
@@ -180,7 +181,6 @@ proc fitZ(self: GreedyCoordinateDescent, X: CSCDataset, y: seq[float64],
     
     if addBase or (it+1) mod self.nRefitting == 0:
       # compute objective for stopping criterion
-      result = 0.0
       for s in 0..<len(lams):
         result += abs(lams[s])
       result *= beta / float(nSamples)
@@ -193,7 +193,7 @@ proc fitZ(self: GreedyCoordinateDescent, X: CSCDataset, y: seq[float64],
           fmt"   Iteration: {align($(it+1), len($self.maxIterInner))}"
         )
         stdout.write(fmt"   Objective: {result:1.4e}")
-        stdout.write(fmt"   Dicreasing: {lossOld - result:1.4e}")
+        stdout.write(fmt"   Decreasing: {lossOld - result:1.4e}")
         stdout.write("\n")
         stdout.flushFile()
 
