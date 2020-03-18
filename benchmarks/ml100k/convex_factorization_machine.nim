@@ -12,7 +12,8 @@ when isMainModule:
   var cfm = newConvexFactorizationMachine(
     task=regression, beta=1e-4, alpha0=1e-8, alpha=1e-8,
     maxComponents=50, ignoreDiag=true)
-  var gcd = newGreedyCoordinateDescent(maxIter=100)
+  var gcd = newGreedyCoordinateDescent(
+    maxIter=100, maxIterPower=1000, tolPower=1e-8)
   gcd.fit(Xtr, yTr, cfm)
 
   echo("Train RMSE: ", cfm.score(Xtr, yTr))

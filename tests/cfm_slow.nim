@@ -1,7 +1,6 @@
 import nimfm/loss, nimfm/tensor, nimfm/metrics, nimfm/convex_factorization_machine
 import nimfm/fm_base
 import sugar, sequtils, math
-import utils
 
 
 type

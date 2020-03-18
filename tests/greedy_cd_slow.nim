@@ -1,6 +1,6 @@
 import nimfm/loss, nimfm/tensor, nimfm/optimizers/optimizer_base
 from nimfm/fm_base import checkTarget, checkInitialized
-import sequtils, math, strformat, strutils
+import sequtils, math
 import fit_linear_slow, cfm_slow, kernels_slow
 
 type

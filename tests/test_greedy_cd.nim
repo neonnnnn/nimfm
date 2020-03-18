@@ -7,7 +7,7 @@ import nimfm/optimizers/greedy_coordinate_descent
 import random
 
 
-suite "Test coordinate descent":
+suite "Test greedy coordinate descent":
   let
     n = 50
     d = 6
@@ -49,6 +49,7 @@ suite "Test coordinate descent":
       gcd.fit(X, y, cfm)
       check cfm.intercept == 0.0
 
+
   test "Test warmStart":
     for fitLinear in [true, false]:
       for fitIntercept in [true, false]:
@@ -69,18 +70,17 @@ suite "Test coordinate descent":
           gcdWarm.fit(X, y, cfmWarm)
 
         randomize(1)
-        var fm = newConvexFactorizationMachine(
+        var cfm = newConvexFactorizationMachine(
           task = regression, maxComponents = maxComponents,
           fitLinear = fitLinear, fitIntercept = fitIntercept)
 
-        var cd = newGreedyCoordinateDescent(
+        var gcd = newGreedyCoordinateDescent(
           maxIter = 10, verbose = 0, tol = 0
         )
-        cd.fit(X, y, fm)
-
-        check abs(fm.intercept-cfmWarm.intercept) < 1e-5
-        checkAlmostEqual(fm.w, cfmWarm.w, atol = 1e-5)
-        checkAlmostEqual(fm.lams, cfmWarm.lams, atol = 1e-5)
+        gcd.fit(X, y, cfm)
+        check abs(cfm.intercept-cfmWarm.intercept) < 1e-5
+        checkAlmostEqual(cfm.w, cfmWarm.w, atol = 1e-5)
+        checkAlmostEqual(cfm.lams, cfmWarm.lams, atol = 1e-5)
   
 
   # Too slow!
@@ -103,7 +103,7 @@ suite "Test coordinate descent":
           task = regression,  maxComponents = maxComponents,
           fitLinear = fitLinear, fitIntercept = fitIntercept)
         var gcdSlow = newGCDSlow(
-          maxIter = 3, tol = 0, maxIterPower=1000)
+          maxIter = 10, tol = 0, maxIterPower=1000, tolPower=0.0)
         gcdSlow.fit(XMat, y, cfmSlow)
 
         # fit fast version
@@ -112,16 +112,16 @@ suite "Test coordinate descent":
           task = regression, maxComponents = maxComponents,
           fitLinear = fitLinear, fitIntercept = fitIntercept)
         var gcd = newGreedyCoordinateDescent(
-          maxIter = 3, verbose = 0, tol = 0,
+          maxIter = 10, verbose = 0, tol = 0, tolPower=0.0,
           maxIterPower=1000
         )
         gcd.fit(X, y, cfm)
 
+        #check cfm.score(X, y) == cfmSlow.score(X, y)
         check abs(cfm.intercept-cfmSlow.intercept) < 1e-3
         checkAlmostEqual(cfm.w, cfmSlow.w)
         checkAlmostEqual(cfm.lams, cfmSlow.lams)
         
-
   test "Test score":
     for fitLinear in [true, false]:
       for fitIntercept in [true, false]:
@@ -142,6 +142,7 @@ suite "Test coordinate descent":
         let scoreBefore = cfm.score(X, y)
         gcd.fit(X, y, cfm)
         check cfm.score(X, y) < scoreBefore
+
 
   test "Test regularization":
     for fitLinear in [true, false]:

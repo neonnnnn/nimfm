@@ -120,8 +120,6 @@ proc hstack(dataseq: seq[seq[seq[float64]]]): seq[seq[float64]] =
 
 suite "Test datasets":
   const nSamples: int = 4
-  const nFeatures: int = 6
-  const nNz: int = 5
   var data: seq[seq[float64]]
   newSeq(data, 4)
   data[0] = @[0.0, 0.0, 1.0, 0.0, -4.2, 0.0]
