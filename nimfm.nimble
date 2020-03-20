@@ -7,7 +7,7 @@ srcDir        = "src"
 
 
 # Dependencies
-requires "nim >= 1.0.6", "cligen >= 0.9.43"
+requires "nim >= 1.0.6", "cligen >= 0.9.43", "nimlapack >= 0.2.0"
 
 # Compile and create binary in ./bin for end users
 task make, "builds nimfm":
