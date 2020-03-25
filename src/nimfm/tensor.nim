@@ -537,8 +537,9 @@ proc vmmul*(vec: Vector, mat: Matrix, result: var Vector) =
   if len(result) != mat.shape[1]:
     raise newException(ValueError, "len(result) != nat.shape[1].")
   result[.. ^1] = 0.0
-  for i, mati in mat.data:
-    result[i] = dot(mati, vec)
+  for i in 0..<len(vec):
+    for j in 0..<mat.shape[1]:
+      result[j] += vec[i] * mat[i, j]
 
 
 proc vmmul*(vec: Vector, mat: Matrix): Vector =
@@ -547,8 +548,7 @@ proc vmmul*(vec: Vector, mat: Matrix): Vector =
   if mat.shape[0] != len(vec):
     raise newException(ValueError, "mat.shape[0] != len(vec).")
   result = newSeqWith(mat.shape[1], 0.0)
-  for i, mati in mat.data:
-    result[i] = dot(mati, vec)
+  vmmul(vec, mat, result)
 
 
 # Naive and too slow
@@ -664,3 +664,63 @@ proc dsyev*(X: var Matrix, eigs: var Vector, columnWise=true) =
     for j in 0..<n:
       if columnWise: X[i, j] = A[i+j*n]
       else: X[j, i] = A[i+j*n] 
+
+
+proc cg*(A: Matrix, b: Vector, x: var Vector, maxIter=1000, tol=1e-4) =
+  if A.shape[0] != A.shape[1]:
+    raise newException(ValueError, "A.shape[0] != A.shape[1].")
+  let n = len(A)
+  x[.. ^1] = 0.0
+  var r = b
+  var p = b
+  var cache = zeros([n])
+  for it in 0..<maxIter:
+    mvmul(A, p, cache)
+    let alpha = dot(r, p) / dot(p, cache)
+    p *= alpha
+    x += p
+    cache *= alpha
+    let norm = dot(r, r)
+    let normNew = norm + dot(cache, cache) - 2 * dot(r, cache)
+    if normNew < tol: break
+    let beta = normNew / norm
+    r -= cache
+    p *= beta / alpha
+    p += r
+
+
+proc cgnr*(A: Matrix, b: Vector, x: var Vector, maxIter=1000, tol=1e-4) =
+  let n = len(A)
+  let m = len(x)
+  x[.. ^1] = 0.0
+  var r = vmmul(b, A)
+  var p = r
+  var cache = zeros([n])
+  var cache1 = zeros([m])
+  for it in 0..<maxIter:
+    mvmul(A, p, cache)
+    let alpha = dot(r, p) / dot(cache, cache)
+    p *= alpha
+    x += p
+    vmmul(cache, A, cache1)
+    cache1 *= alpha
+    let norm = dot(r, r)
+    let normNew = norm + dot(cache1, cache1) - 2 * dot(r, cache1)
+    if normNew < tol: break
+    let beta = normNew / norm
+    r -= cache1
+    p *= beta / alpha
+    p += r
+
+
+when isMainModule:
+  var A = @[@[1.0, 1.0], @[1.0, 4.0]].toMatrix
+  var b = @[3.0, 9.0]
+  var x = @[0.0, 0.0]
+  cg(A, b, x)
+
+  var A2 = @[@[1.0, -2.0, 5.0], @[-0.3, 1.1, 0.5], @[0.4, -0.5, -0.2], @[2.0, 3.0, 0.1]].toMatrix
+  var x2 = @[2.0, -1.0, 4.0]
+  var b2 = mvmul(A2, x2)
+  cgnr(A2, b2, x2)
+  echo(x2)
