@@ -600,37 +600,57 @@ proc orthogonalize*(X: var Matrix, n: int) =
     X[i] /= norm(X[i], 2)
 
 
-proc powerIteration*(X: Matrix, maxIter=100, tol=1e-4): 
-                    tuple[value: float64, vector: Vector] =
+proc powerMethod*(X: Matrix, maxIter=100, tol=1e-4): 
+                  tuple[value: float64, vector: Vector] =
   ## Computes the dominate eigenvalue and corresponding eigenvector of X
   let n = X.shape[0]
   if n != X.shape[1]:
     raise newException(ValueError, "X is not square matrix.")
-  var vector = zeros([n])
-  var cache = zeros([n])
-  var ev = 0.0
-  var evOld = 0.0
+  var evec = zeros([n])
+  var Xevec = zeros([n])
+  var eval = 0.0
+  var evalOld = 0.0
   # init
   for j in 0..<n:
-    vector[j] = 2*rand(1.0) - 1.0
-  vector /= norm(vector, 2)
+    evec[j] = 2*rand(1.0) - 1.0
+  evec /= norm(evec, 2)
   # start power iteration
   for it in 0..<maxIter:
-    ev = 0.0
     # compute eigen value
+    mvmul(X, evec, Xevec)
+    eval = dot(Xevec, evec)
     for i in 0..<n:
-      var vi = 0.0
-      for j in 0..<n:
-        vi += X[i, j] * vector[j]
-      ev += vector[i] * vi
-      cache[i] = vi
-    for i in 0..<n:
-      vector[i] = cache[i]
-    vector /= norm(vector, 2)
-    if it > 0 and abs(ev-evOld) < tol:
+      evec[i] = Xevec[i]
+    evec /= norm(evec, 2)
+    if it > 0 and abs(eval-evalOld) < tol:
       break
-    evOld = ev
-  result = (ev, vector)
+    evalOld = eval
+  result = (eval, evec)
+
+
+proc powerMethod*(linear: (Vector, var Vector)->void, n:int, maxIter=100,
+                  tol=1e-4): tuple[value: float64, vector: Vector] =
+  ## Computes the dominate eigenvalue and corresponding eigenvector of X
+  var evec = zeros([n])
+  var Xevec = zeros([n])
+  var eval = 0.0
+  var evalOld = 0.0
+  # init
+  for j in 0..<n:
+    evec[j] = 2*rand(1.0) - 1.0
+  evec /= norm(evec, 2)
+  # start power iteration
+  for it in 0..<maxIter:
+    # compute eigen value
+    linear(evec, Xevec)
+    eval = dot(evec, Xevec)
+    for i in 0..<n:
+      evec[i] = Xevec[i]
+    evec /= norm(evec, 2)
+    if it > 0 and abs(eval-evalOld) < tol:
+      break
+    evalOld = eval
+  result = (eval, evec)
 
 
 proc dsyev*(X: var Matrix, eigs: var Vector, columnWise=true) =
@@ -673,18 +693,40 @@ proc cg*(A: Matrix, b: Vector, x: var Vector, maxIter=1000, tol=1e-4) =
   x[.. ^1] = 0.0
   var r = b
   var p = b
-  var cache = zeros([n])
+  var Ap = zeros([n])
   for it in 0..<maxIter:
-    mvmul(A, p, cache)
-    let alpha = dot(r, p) / dot(p, cache)
+    mvmul(A, p, Ap)
+    let alpha = dot(r, p) / dot(p, Ap)
     p *= alpha
     x += p
-    cache *= alpha
+    Ap *= alpha
     let norm = dot(r, r)
-    let normNew = norm + dot(cache, cache) - 2 * dot(r, cache)
+    let normNew = norm + dot(Ap, Ap) - 2 * dot(r, Ap)
     if normNew < tol: break
     let beta = normNew / norm
-    r -= cache
+    r -= Ap
+    p *= beta / alpha
+    p += r
+
+
+proc cg*(linear: (Vector, var Vector)->void, b: Vector, 
+         x: var Vector, maxIter=1000, tol=1e-4) =
+  let n = len(b)
+  x[.. ^1] = 0.0
+  var r = b
+  var p = b
+  var Ap = zeros([n])
+  for it in 0..<maxIter:
+    linear(p, Ap)
+    let alpha = dot(r, p) / dot(p, Ap)
+    p *= alpha
+    x += p
+    Ap *= alpha
+    let norm = dot(r, r)
+    let normNew = norm + dot(Ap, Ap) - 2 * dot(r, Ap)
+    if normNew < tol: break
+    let beta = normNew / norm
+    r -= Ap
     p *= beta / alpha
     p += r
 
@@ -693,22 +735,22 @@ proc cgnr*(A: Matrix, b: Vector, x: var Vector, maxIter=1000, tol=1e-4) =
   let n = len(A)
   let m = len(x)
   x[.. ^1] = 0.0
-  var r = vmmul(b, A)
+  var r = vmmul(b, A) # len(r) = m
   var p = r
-  var cache = zeros([n])
-  var cache1 = zeros([m])
+  var Ap = zeros([n]) 
+  var AAp = zeros([m]) # A^\top A p
   for it in 0..<maxIter:
-    mvmul(A, p, cache)
-    let alpha = dot(r, p) / dot(cache, cache)
+    mvmul(A, p, Ap)
+    let alpha = dot(r, p) / dot(Ap, Ap)
     p *= alpha
     x += p
-    vmmul(cache, A, cache1)
-    cache1 *= alpha
+    vmmul(Ap, A, AAp)
+    AAp *= alpha
     let norm = dot(r, r)
-    let normNew = norm + dot(cache1, cache1) - 2 * dot(r, cache1)
+    let normNew = norm + dot(AAp, AAp) - 2 * dot(r, AAp)
     if normNew < tol: break
     let beta = normNew / norm
-    r -= cache1
+    r -= AAp
     p *= beta / alpha
     p += r
 
@@ -723,4 +765,9 @@ when isMainModule:
   var x2 = @[2.0, -1.0, 4.0]
   var b2 = mvmul(A2, x2)
   cgnr(A2, b2, x2)
+  echo(x2)
+
+  proc linear(p: Vector, x: var Vector) =
+    vmmul(mvmul(A2, p), A2, x)
+  cg(linear, vmmul(b2, A2), x2)
   echo(x2)
