@@ -124,7 +124,7 @@ proc fitZ(self: GCDSlow, X: Matrix, y: seq[float64],
           for j2 in 0..<nFeatures:
             XTRX[j1, j2] *= 0.5
       # compute dominate eigen vector
-      (evalue, p) = powerIteration(XTRX, self.maxIterPower, self.tol)
+      (evalue, p) = powerMethod(XTRX, self.maxIterPower, self.tol)
       # determine the row index and substitute
       for s in 0..<len(lams):
         if lams[s] == 0.0:
