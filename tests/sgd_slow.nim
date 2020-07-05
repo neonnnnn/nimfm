@@ -1,4 +1,4 @@
-import nimfm/loss, nimfm/tensor
+import nimfm/tensor
 import nimfm/optimizers/optimizer_base, nimfm/optimizers/sgd
 import sequtils, math, random
 import kernels_slow, fm_slow, utils
@@ -67,7 +67,7 @@ proc computeAnovaGrad(P: Tensor, X: Matrix, i, degree, order, nAugments: int,
   computeDerivatives(P, X, dA, i, degree, order, nAugments)
 
 
-proc fit*(self: SGDSlow, X: Matrix, y: seq[float64], fm: var FMSlow) =
+proc fit*[L](self: SGDSlow, X: Matrix, y: seq[float64], fm: var FMSlow[L]) =
   fm.init(X)
   let y = fm.checkTarget(y)
   let
@@ -82,7 +82,7 @@ proc fit*(self: SGDSlow, X: Matrix, y: seq[float64], fm: var FMSlow) =
     fitLinear = fm.fitLinear
     fitIntercept = fm.fitIntercept
     nAugments = fm.nAugments
-    loss = newLossFunction(fm.loss)
+    loss = fm.loss
   var
     indices = toSeq(0..<nSamples)
     dA: Tensor = zeros(fm.P.shape)

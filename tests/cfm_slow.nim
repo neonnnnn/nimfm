@@ -4,13 +4,13 @@ import sugar, sequtils, math
 
 
 type
-  CFMSlow* = ref ConvexFactorizationMachineObj
+  CFMSlow*[L] = ref ConvexFactorizationMachineObj[L]
 
 
-proc newCFMSlow*(
+proc newCFMSlow*[L](
   task: TaskKind, maxComponents = 30, alpha0 = 1e-6, alpha = 1e-3,
-  beta = 1e-5, loss = SquaredHinge, fitIntercept = true, fitLinear = true,
-  ignoreDiag=true, warmStart = false): CFMSlow =
+  beta = 1e-5, eta=1000.0, loss: L = newSquared(), fitIntercept = true, fitLinear = true,
+  ignoreDiag=true, warmStart = false): CFMSlow[L] =
   new(result)
   result.task = task
   result.degree = 2
@@ -22,9 +22,8 @@ proc newCFMSlow*(
   result.alpha0 = alpha0
   result.alpha = alpha
   result.beta = beta
-  case task
-  of regression: result.loss = Squared
-  of classification: result.loss = loss
+  result.eta = eta
+  result.loss = loss
   result.fitIntercept = fitIntercept
   result.fitLinear = fitLinear
   result.ignoreDiag = ignoreDiag

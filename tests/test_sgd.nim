@@ -166,23 +166,22 @@ suite "Test stochastic gradient descent":
 
             var fmWeakReg = newFactorizationMachine(
               task = regression, degree = degree, nComponents = nComponents,
-              fitLower = fitLower, fitLinear = fitLinear, warmStart = true,
+              fitLower = fitLower, fitLinear = fitLinear, warmStart = false,
               fitIntercept = fitIntercept, randomState = 1,
-              alpha0 = 0, alpha = 0, beta = 0)
+              alpha0 = 1e-4, alpha = 1e-4, beta = 1e-4)
             var sgd = newSGD(
-              maxIter = 100, verbose = 0, tol = 0
+              maxIter = 200, verbose = 0, tol = 0
             )
             sgd.fit(X, y, fmWeakReg)
             
             var fmStrongReg = newFactorizationMachine(
               task = regression, degree = degree, nComponents = nComponents,
-              fitLower = fitLower, fitLinear = fitLinear, warmStart = true,
+              fitLower = fitLower, fitLinear = fitLinear, warmStart = false,
               fitIntercept = fitIntercept, randomState = 2,
-              alpha0 = 1000, alpha = 1000, beta = 1000)
+              alpha0 = 10000, alpha = 10000, beta = 10000)
+
             sgd.fit(X, y, fmStrongReg)
 
             check fmWeakReg.score(X, y) < fmStrongReg.score(X, y)
-
-            check abs(fmWeakReg.intercept) >= abs(fmStrongReg.intercept)
             check norm(fmWeakReg.w, 2) >= norm(fmStrongReg.w, 2)
             check norm(fmWeakReg.P, 2) >= norm(fmStrongReg.P, 2)

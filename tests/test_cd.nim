@@ -28,7 +28,7 @@ suite "Test coordinate descent":
             task = regression, degree = degree, nComponents = nComponents,
             fitLower = fitLower, fitLinear = false,
             fitIntercept = fitIntercept, randomState = 1)
-          var cd = newCoordinateDescent(maxIter = 10, verbose = 0, tol = 0)
+          var cd = newCD(maxIter = 10, verbose = 0, tol = 0)
           cd.fit(X, y, fm)
           for j in 0..<d:
             check fm.w[j] == 0.0
@@ -48,7 +48,7 @@ suite "Test coordinate descent":
             task = regression, degree = degree, nComponents = nComponents,
             fitLower = fitLower, fitLinear = fitLinear,
             fitIntercept = false, randomState = 1)
-          var cd = newCoordinateDescent(
+          var cd = newCD(
             maxIter = 10, verbose = 0, tol = 0
           )
           cd.fit(X, y, fm)
@@ -69,7 +69,7 @@ suite "Test coordinate descent":
               task = regression, degree = degree, nComponents = nComponents,
               fitLower = fitLower, fitLinear = fitLinear, warmStart = true,
               fitIntercept = fitIntercept, randomState = 1)
-            var cdWarm = newCoordinateDescent(
+            var cdWarm = newCD(
               maxIter = 1, verbose = 0, tol = 0
             )
             for i in 0..<10:
@@ -80,7 +80,7 @@ suite "Test coordinate descent":
               fitLower = fitLower, fitLinear = fitLinear,
               fitIntercept = fitIntercept, randomState = 1)
 
-            var cd = newCoordinateDescent(
+            var cd = newCD(
               maxIter = 10, verbose = 0, tol = 0
             )
             cd.fit(X, y, fm)
@@ -110,7 +110,7 @@ suite "Test coordinate descent":
               task = regression, degree = degree, nComponents = nComponents,
               fitLower = fitLower, fitLinear = fitLinear,
               fitIntercept = fitIntercept, randomState = 1)
-            var cdSlow = newCoordinateDescentSlow(maxIter = 3, tol = 0)
+            var cdSlow = newCDSlow(maxIter = 3, tol = 0)
             cdSlow.fit(XMat, y, fmSlow)
 
             # fit fast version
@@ -118,7 +118,7 @@ suite "Test coordinate descent":
               task = regression, degree = degree, nComponents = nComponents,
               fitLower = fitLower, fitLinear = fitLinear,
               fitIntercept = fitIntercept, randomState = 1)
-            var cd = newCoordinateDescent(
+            var cd = newCD(
               maxIter = 3, verbose = 0, tol = 0
             )
             cd.fit(X, y, fm)
@@ -144,7 +144,7 @@ suite "Test coordinate descent":
               fitLower = fitLower, fitLinear = fitLinear, alpha0 = 1e-9,
               alpha = 1e-9, beta = 1e-9,
               fitIntercept = fitIntercept, randomState = 1)
-            var cd = newCoordinateDescent(
+            var cd = newCD(
               maxIter = 20, verbose = 0, tol = 0
             )
             fm.init(X)
@@ -170,7 +170,7 @@ suite "Test coordinate descent":
               fitLower = fitLower, fitLinear = fitLinear, warmStart = true,
               fitIntercept = fitIntercept, randomState = 1,
               alpha0 = 0, alpha = 0, beta = 0)
-            var cd = newCoordinateDescent(
+            var cd = newCD(
               maxIter = 100, verbose = 0, tol = 0
             )
             cd.fit(X, y, fmWeakReg)

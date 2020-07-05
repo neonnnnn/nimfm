@@ -1,9 +1,9 @@
 import nimfm/loss, nimfm/tensor
 
 
-proc fitLinearCD*(w: var Vector, X: Matrix, y: seq[float64],
-                  yPred: var seq[float64], colNormSq: Vector,
-                  alpha: float64, loss: LossFunction): float64 =
+proc fitLinearCD*[L](w: var Vector, X: Matrix, y: seq[float64],
+                     yPred: var seq[float64], colNormSq: Vector,
+                     alpha: float64, loss: L): float64 =
   result = 0.0
   let nSamples = X.shape[0]
   let nFeatures = X.shape[1]
@@ -23,9 +23,9 @@ proc fitLinearCD*(w: var Vector, X: Matrix, y: seq[float64],
       yPred[i] -= update * X[i, j]
 
 
-proc fitInterceptCD*(intercept: var float64, y: seq[float64],
-                     yPred: var seq[float64], nSamples: int,
-                     alpha0: float64, loss: LossFunction): float64 =
+proc fitInterceptCD*[L](intercept: var float64, y: seq[float64],
+                        yPred: var seq[float64], nSamples: int,
+                        alpha0: float64, loss: L): float64 =
   result = alpha0 * intercept
   for i in 0..<nSamples:
     result += loss.dloss(y[i], yPred[i])
