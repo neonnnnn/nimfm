@@ -1,5 +1,5 @@
 import loss, kernels, tensor, fm_base
-import sugar, random, sequtils, strutils, parseutils
+import random, sequtils, strutils, parseutils, typetraits
 
 
 type
@@ -8,15 +8,15 @@ type
     augment = "augment",
     none = "none"
 
-  FactorizationMachineObj* = object
+  FactorizationMachineObj*[L] = object
     task*: TaskKind         ## regression or classification.
     degree*: int            ## Degree of the polynomial.
     nComponents*: int       ## Number of basis vectors (rank hyper-parameter).
     alpha0*: float64        ## Regularization strength for intercept.
     alpha*: float64         ## Regularization strength for linear term.
-    beta*: float64          ## Regularization strengt for higher-order weights.
-    loss*: LossFunctionKind ## Loss function.
-                            ## Squared, SquaredHinge, or Logistic.
+    beta*: float64          ## Regularization strength for higher-order weights.
+    loss*: L                ## Loss function. It must has mu: float64 field and 
+                            ## loss/dloss: (float64, float64) -> float64.
     fitLower*: FitLowerKind ## Whether and how to fit lower-order terms.
                             ##   - explicit: fits a seperate weights for each
                             ##               lower order.
@@ -37,20 +37,19 @@ type
                             ## shape (degree-2 or degree-1 or 1,
                             ##        nComponents,
                             ##        nFeatures+nAugments)
-    lams*: Vector           ## Weights for each base. shape (nComponents)
-    w*: Vector              ## Weigths for linear term, shape (nFeatures)
-    intercept*: float64     # Intercept term
+    lams*: Vector           ## Weights for vectors in basis.
+                            ## shape: (nComponents)
+    w*: Vector              ## Weigths for linear term, shape: (nFeatures)
+    intercept*: float64     ## Intercept term.
 
-  FactorizationMachine* = ref FactorizationMachineObj
+  FactorizationMachine*[L] = ref FactorizationMachineObj[L]
 
 
-proc newFactorizationMachine*(task: TaskKind, degree = 2, nComponents = 30,
-                              alpha0 = 1e-6, alpha = 1e-3, beta = 1e-3,
-                              loss = SquaredHinge, fitLower = explicit,
-                              fitIntercept = true,
-                              fitLinear = true, warmStart = false,
-                              randomState = 1, scale = 0.1):
-                              FactorizationMachine =
+proc newFactorizationMachine*[L](
+  task: TaskKind, degree = 2, nComponents = 30, alpha0 = 1e-6, alpha = 1e-3,
+  beta = 1e-3, loss: L = newSquared(), fitLower = explicit, 
+  fitIntercept = true, fitLinear = true, warmStart = false, randomState = 1,
+  scale = 0.01): FactorizationMachine[L] =
   ## Create a new FactorizationMachine.
   ## task: classification or regression.
   ## degree: Degree of the polynomial (= the order of feature interactions).
@@ -58,10 +57,8 @@ proc newFactorizationMachine*(task: TaskKind, degree = 2, nComponents = 30,
   ## alpha0: Regularization strength for intercept.
   ## alpha: Regularization strength for linear term.
   ## beta: Regularization strength for higher-order weights.
-  ## loss: Loss function.
-  ##   - Squared: 1/2 (y-p)**2,
-  ##   - SquaredHinge: (max(0, 1-y*p))**2,
-  ##   - Logistic: log (1+exp(-y*p)), where p is the predicted value.
+  ## loss: Loss function. It must hasve mu: float64 field and
+  ##       loss/dloss proc: (float64, float64)->float64.
   ## fitLower: Whether and how to fit lower-order terms.
   ##   - explicit: fits a seperate weights for each lower order.
   ##   - augment: adds the dummy feature for each feature vectors and fits\
@@ -72,7 +69,7 @@ proc newFactorizationMachine*(task: TaskKind, degree = 2, nComponents = 30,
   ## fitLinear: Whether to fit linear term or not.
   ## warmStart: Whether to do warwm start fitting or not.
   ## randomState: The seed of the pseudo random number generator.
-  ## scale: The scale (a.k.a std) of the Normal distribution for initialization
+  ## scale: The scale (a.k.a std) of the Gaussian distribution for initialization
   ##        of higher-order weights.
   new(result)
   result.task = task
@@ -87,9 +84,7 @@ proc newFactorizationMachine*(task: TaskKind, degree = 2, nComponents = 30,
   result.alpha0 = alpha0
   result.alpha = alpha
   result.beta = beta
-  case task
-  of regression: result.loss = Squared
-  of classification: result.loss = loss
+  result.loss = loss
   result.fitLower = fitLower
   result.fitIntercept = fitIntercept
   result.fitLinear = fitLinear
@@ -141,10 +136,10 @@ proc decisionFunction*[FM, Dataset](self: FM, X: Dataset): seq[float64] =
         result[i] += self.lams[s]*A[i, self.degree-order]
 
 
-proc init*[Dataset, FM](self: FM, X: Dataset, force=false) =
+proc init*[FM, Dataset](self: FM, X: Dataset, force=false) =
   ## Initializes the factorization machine.
-  ## If force=false, fm is already initialized, and warmStart=true,
-  ## fm will not be initialized.
+  ## self will not be initialized if force=false, fm is already initialized,
+  ## and warmStart=true.
   if force or not (self.warmStart and self.isInitalized):
     let nFeatures: int = X.nFeatures
     randomize(self.randomState)
@@ -158,7 +153,7 @@ proc init*[Dataset, FM](self: FM, X: Dataset, force=false) =
   self.isInitalized = true
 
 
-proc dump*(self: FactorizationMachine, fname: string) =
+proc dump*[L](self: FactorizationMachine[L], fname: string) =
   ## Dumps the fitted factorization machine.
   self.checkInitialized()
   let nComponents = self.P.shape[1]
@@ -171,7 +166,7 @@ proc dump*(self: FactorizationMachine, fname: string) =
   f.writeLine("alpha0: ", self.alpha0)
   f.writeLine("alpha: ", self.alpha)
   f.writeLine("beta: ", self.beta)
-  f.writeLine("loss: ", self.loss)
+  f.writeLine("loss: ", name(type(self.loss)))
   f.writeLine("fitLower: ", self.fitLower)
   f.writeLine("fitIntercept: ", self.fitIntercept)
   f.writeLine("fitLinear: ", self.fitLinear)
@@ -192,7 +187,8 @@ proc dump*(self: FactorizationMachine, fname: string) =
   f.close()
 
 
-proc load*(fm: var FactorizationMachine, fname: string, warmStart: bool) =
+proc load*[L](fm: var FactorizationMachine[L], fname: string, warmStart: bool, 
+              loss: L) =
   ## Loads the fitted factorization machine.
   new(fm)
   var f: File = open(fname, fmRead)
@@ -204,7 +200,11 @@ proc load*(fm: var FactorizationMachine, fname: string, warmStart: bool) =
   discard parseFloat(f.readLine().split(" ")[1], fm.alpha0, 0)
   discard parseFloat(f.readLine().split(" ")[1], fm.alpha, 0)
   discard parseFloat(f.readLine().split(" ")[1], fm.beta, 0)
-  fm.loss = parseEnum[LossFunctionKind](f.readLine().split(" ")[1])
+  let lossName = f.readLine().split(" ")[1]
+  fm.loss = loss
+  if name(type(loss)) != lossName:
+    echo("Assert: You define ", name(type(loss)), " loss but loaded model ",
+         "used ", lossName, " loss.")
   fm.fitLower = parseEnum[FitLowerKind](f.readLine().split(" ")[1])
   fm.fitIntercept = parseBool(f.readLine().split(" ")[1])
   fm.fitLinear = parseBool(f.readLine().split(" ")[1])
