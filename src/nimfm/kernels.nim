@@ -74,22 +74,21 @@ proc anova*(X: CSRDataset, P: Matrix, A: var Matrix,
   else:
     for i in 0..<nSamples:
       for (j, val) in X.getRow(i):
-        A[i, 2] += P[s, j] * val
-        A[i, 1] += (P[s, j] * val)^2
+        A[i, 1] += P[s, j] * val
+        A[i, 2] += (P[s, j] * val)^2
       # for augmented features
       for j in nFeatures..<(nFeatures+nAugments):
-        A[i, 2] += P[s, j]
-        A[i, 1] += P[s, j]^2
-      A[i, 2] = (A[i, 2]^2 - A[i, 1])/2.0
+        A[i, 1] += P[s, j]
+        A[i, 2] += P[s, j]^2
+      A[i, 2] = (A[i, 1]^2 - A[i, 2])/2.0
 
 
 proc poly*(X: CSCDataset, P: Matrix, A: var Matrix,  
            degree, s: int, nAugments: int = 0) =
   let nSamples = X.nSamples
   let nFeatures = X.nFeatures
-  for i in 0..<nSamples:
-    A[i, 0] = 1.0
-
+  A[0..^1, 1..^1] = 0.0
+  A[0..^1, 0] = 1.0
   for j in 0..<nFeatures:
     for (i, val) in X.getCol(j):
         A[i, 1] += P[s, j] * val
@@ -101,16 +100,17 @@ proc poly*(X: CSCDataset, P: Matrix, A: var Matrix,
     
   for i in 0..<nSamples:
     for order in 2..<degree+1:
-      A[i, order] = A[i, 1]^order
+      A[i, order] = A[i, order-1]*A[i, 1]
 
 
 proc poly*(X: CSRDataset, P: Matrix, A: var Matrix, 
             degree, s: int, nAugments: int = 0) =
   let nSamples = X.nSamples
   let nFeatures = X.nFeatures
-  for i in 0..<nSamples:
-    A[i, 0] = 1.0
-  
+
+  A[0..^1, 0..^1] = 0.0
+  A[0..^1, 0] = 1.0
+
   for i in 0..<nSamples:
     for (j, val) in X.getRow(i):
       A[i, 1] += P[s, j] * val
@@ -120,4 +120,4 @@ proc poly*(X: CSRDataset, P: Matrix, A: var Matrix,
   
   for i in 0..<nSamples:
     for order in 2..<degree+1:
-      A[i, order] = A[i, 1]^order
+      A[i, order] = A[i, order-1]*A[i, 1]
