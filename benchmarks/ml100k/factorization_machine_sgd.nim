@@ -4,7 +4,7 @@ import nimfm
 when isMainModule:
   var XTr, XTe: CSRDataset  # Use CSRDataset for SGD solver
   var yTr, yTe: seq[float64]
-  let scheduling: SchedulingKind = optimal
+  let scheduling: SchedulingKind = constant
   loadSVMLightFile("ml-100k_user_item_feature_train.svm",
                     XTr, yTr, nFeatures=2703)
   loadSVMLightFile("ml-100k_user_item_feature_test.svm",

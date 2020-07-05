@@ -10,7 +10,7 @@ when isMainModule:
                     XTe, yTe, nFeatures=2703)
 
   var fm = newFactorizationMachine(task=regression, degree=1)
-  var cd = newCoordinateDescent(maxIter=100)
+  var cd = newCD(maxIter=1000)
   cd.fit(Xtr, yTr, fm)
 
   echo("Train RMSE: ", fm.score(Xtr, yTr))
