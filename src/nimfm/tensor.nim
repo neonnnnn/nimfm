@@ -69,6 +69,13 @@ proc zeros*(shape: array[3, int]): Tensor =
   )
 
 
+proc eye*(n: int): Matrix =
+  new(result)
+  result = zeros([n, n])
+  for i in 0..<n:
+    result.data[i][i] = 1.0
+
+
 # For Vector broadcasting
 # Vector-scalar in-place operations
 proc `+=`*[T](self: var seq[T], val: T) {.inline.} =
@@ -193,6 +200,22 @@ proc `[]`*(self: Matrix, i, j: int): var float64 {.inline.} =
 proc `[]`*(self: Matrix, i: int): var Vector {.inline.} = self.data[i]
 
 
+proc `[]`*[U1, V1](self: Matrix, x: HSlice[U1, V1]): Matrix {.inline.} =
+  let a1 = self ^^ x.a
+  let b1 = self ^^ x.b
+  result = zeros([b1-a1+1, self.shape[1]])
+  for i in a1..b1:
+    result[i] = self[i]
+
+
+proc `[]`*[U1, V1](self: Matrix, x: HSlice[U1, V1], j: int): Vector =
+  let a1 = self ^^ x.a
+  let b1 = self ^^ x.b
+  result = zeros([b1-a1+1])
+  for i in a1..b1:
+    result[i] = self[i][j]
+
+
 proc `[]=`*(self: var Matrix, i, j: int, val: float64) {.inline.} =
   self.data[i][j] = val
 
@@ -214,6 +237,57 @@ proc `[]=`*[U1, V1, U2, V2](self: var Matrix, x: HSlice[U1, V1],
   for i in a1..b1:
     for j in a2..b2:
       self[i, j] = val
+
+
+proc `[]=`*[U1, V1](self: var Matrix, x: HSlice[U1, V1],
+                    j: int, val: float64) {.inline.} =
+  let a1 = self ^^ x.a
+  let b1 = self ^^ x.b
+  for i in a1..b1:
+    self[i, j] = val
+
+
+proc `[]=`*[U1, V1](self: var Matrix, x: HSlice[U1, V1],
+                    val: float64) {.inline.} =
+  let a1 = self ^^ x.a
+  let b1 = self ^^ x.b
+  for i in a1..b1:
+    self.data[i][0..^1] = val
+
+
+proc `[]=`*[U1, V1](self: var Matrix, x: HSlice[U1, V1],
+                    v: Vector) {.inline.} =
+  let a1 = self ^^ x.a
+  let b1 = self ^^ x.b
+  for i in a1..b1:
+    self.data[i] = v
+
+
+proc `[]=`*[U1, V1](self: var Matrix, x: HSlice[U1, V1],
+                    V: Matrix) {.inline.} =
+  let a1 = self ^^ x.a
+  let b1 = self ^^ x.b
+  if V.shape[0] != (b1-a1+1):
+    let msg = fmt"shape[1] of RHS {V.shape[0]} != the slice length."
+    raise newException(ValueError, msg)
+  if V.shape[1] != self.shape[1]:
+    raise newException(ValueError, "shape[1] of two matrics must be same.")
+  for i in a1..b1:
+    self.data[i] = V.data[i]
+
+
+proc `[]=`*[U2, V2](self: var Matrix, i: int,
+                    y: HSlice[U2, V2], val: float64) {.inline.} =
+  let a2 = self[0] ^^ y.a
+  let b2 = self[0] ^^ y.b
+  for j in a2..b2:
+    self[i, j] = val
+
+
+proc `[]=`*(self: var Matrix, i: int,  y: Vector) {.inline.} =
+  if len(self.data[i]) != len(y):
+    raise newException(ValueError, "len of vector != matrix.shape[1]")
+  self.data[i] = y
 
 
 # for Matrix broadcast
@@ -301,12 +375,34 @@ proc transpose*(mat: Matrix): Matrix =
 proc T*(mat: Matrix): Matrix = transpose(mat)
 
 
+proc vec*(mat: Matrix): Vector =
+  let
+    m = mat.shape[0]
+    n = mat.shape[1]
+  result = zeros([m*n])
+  for i in 0..<m:
+    for j in 0..<n:
+      result[i+j*n] = mat[i, j]
+
+
+proc vech*(mat: Matrix): Vector =
+  let
+    m = mat.shape[0]
+    n = mat.shape[1]
+  result = zeros([m*n])
+  for i in 0..<m:
+    for j in 0..<n:
+      result[i*n+j] = mat[i, j]
+
 # for Tensor subsucription
 proc `[]`*(self: Tensor, i, j, k: int): var float64 {.inline.} =
   result = self.data[i].data[j][k]
 
 
 proc `[]`*(self: Tensor, i: int): var Matrix {.inline.} = self.data[i]
+
+
+proc `[]`*(self: Tensor, i, j: int): var Vector {.inline.} = self.data[i][j]
 
 
 proc `[]=`*(self: var Tensor, i, j, k: int, val: float64) {.inline.} =
@@ -368,7 +464,8 @@ proc norm*(X: Tensor, p: int): float64 =
       for k in 0..<X.shape[2]:
         if p == 0: result += float(X[i, j, k] != 0)
         else: result += abs(X[i, j, k])^p
-  result = pow(result, 1.0/float(p))
+  if p != 0:
+    result = pow(result, 1.0/float(p))
 
 
 proc norm*(X: Matrix, p: int): float64 =
@@ -379,7 +476,8 @@ proc norm*(X: Matrix, p: int): float64 =
     for j in 0..<X.shape[1]:
       if p == 0: result += float(X[i, j] != 0)
       else: result += abs(X[i, j])^p
-  result = pow(result, 1.0/float(p))
+  if p != 0:
+    result = pow(result, 1.0/float(p))
 
 
 proc norm*[T](X: T, p: int): float64 =
@@ -389,7 +487,8 @@ proc norm*[T](X: T, p: int): float64 =
   for i in 0..<len(X):
     if p == 0: result += float(X[i] != 0)
     else: result += abs(X[i])^p
-  result = pow(result, 1.0/float(p))
+  if p != 0:
+    result = pow(result, 1.0/float(p))
 
 
 proc addRow*[Vec](self: var Matrix, x: Vec) =
@@ -410,6 +509,19 @@ proc deleteRow*(self: var Matrix, i: int) =
   self.shape[0] -= 1
 
 
+proc sum*(self: Matrix, axis: int): Vector =
+  if axis == 0: 
+    result = zeros([self.shape[1]])
+    for i in 0..<self.shape[0]:
+      result += self.data[i]
+  elif axis == 1:
+    result = zeros([self.shape[0]])
+    for i in 0..<self.shape[0]:
+      for j in 0..<self.shape[1]:
+        result[i] += self.data[i][j]
+  else:
+    raise newException(ValueError, "axis must be 0 or 1.")
+
 proc sum*[T: Matrix|Tensor](X: T): float64 = sum(X.data)
 
 
@@ -420,7 +532,7 @@ proc dot(x, y: float64): float64 {.inline.} = x*y
 
 
 proc dot*[T: Vector|Matrix|Tensor](X, Y: T): float64 {.inline.} =
-  ## Computes dot product between two vectors/matrices/tensors
+  ## Computes dot product of two vectors/matrices/tensors
   if X.shape != Y.shape:
     raise newException(ValueError, "shape(X) != shape(Y).")
   result = 0.0
@@ -428,7 +540,7 @@ proc dot*[T: Vector|Matrix|Tensor](X, Y: T): float64 {.inline.} =
     result += dot(X[i], Y[i])
 
 
-# element-wise operation between two matrices/tensors
+# element-wise operation of two matrices/tensors
 # in-place operations
 proc `+=`*[T: Matrix|Tensor](self: var T, Y: T) =
   ## Compute in-place row-wise/element-wise addition
@@ -572,7 +684,6 @@ proc matmul*(mat1, mat2: Matrix, result: var Matrix) =
         result[i, j] += mat1[i, k] * mat2[k, j]
 
 
-# Naive and too slow
 proc matmul*(mat1, mat2: Matrix): Matrix =
   ## Multpies mat1: (n, k) matrix and mat2: (k, m) matrix
   ## Returns new (n, m) matrix
@@ -587,10 +698,28 @@ proc matmul*(mat1, mat2: Matrix): Matrix =
   matmul(mat1, mat2, result)
 
 
+proc kronecker*(mat1, mat2: Matrix, result: var Matrix) =
+  ## Computes Kronecker product of mat1 and mat2.
+  let
+    m = mat1.shape[0]
+    n = mat1.shape[1]
+    p = mat2.shape[0]
+    q = mat2.shape[1]
+    shape = [m*p, n*q]
+  if result.shape != shape:
+    raise newException(ValueError, fmt"{result.shape} != {shape}.")
+  for i in 0..<m:
+    for j in 0..<n:
+      for k in 0..<p:
+        for l in 0..<q:
+          result[i*p+k, j*q+l] = mat1[i, j] * mat2[k, l]
+
+
 # Modified Gram-Schmidt
-proc orthogonalize*(X: var Matrix, n: int) =
+proc orthogonalize*(X: var Matrix, n: int = -1) =
   ## Orthogonalizes rows in X.
-  for i in 0..<n:
+  let m = if n < 0: X.shape[0] else: n
+  for i in 0..<m:
     for j in 0..<i:
       var dot = 0.0
       for k in 0..<X.shape[1]:
@@ -654,7 +783,7 @@ proc powerMethod*(linear: (Vector, var Vector)->void, n:int, maxIter=100,
 
 
 proc dsyev*(X: var Matrix, eigs: var Vector, columnWise=true) =
-  ## Computes eigendecomposition of X
+  ## Computes eigendecomposition of X.
   if X.shape[0] != X.shape[1]:
     raise newException(ValueError, "X is not squared matrix.")
   let 
@@ -686,88 +815,87 @@ proc dsyev*(X: var Matrix, eigs: var Vector, columnWise=true) =
       else: X[j, i] = A[i+j*n] 
 
 
-proc cg*(A: Matrix, b: Vector, x: var Vector, maxIter=1000, tol=1e-4) =
+proc cg*(linear: (Vector, var Vector)->void, b: Vector, x: var Vector, 
+         maxIter=1000, tol=1e-4, init=true,
+         preconditioner: (var Vector)->void = proc(p: var Vector) = discard)=
+  ## Solves the f(x) = b by conjugate gradient with preconditioner,
+  ## where linear: (Vector, var Vector)->void is the linear operattor f.
+  let n = len(b)
+  var Ap = zeros([n])
+  var bPre = b
+  preconditioner(bPre)  # left preconditioning
+  var r = bPre
+  var pPre = zeros([n])
+  if init: x[.. ^1] = 0.0
+  else:
+    pPre = x
+    preconditioner(pPre) # right preconditioning
+    linear(pPre, Ap)
+    preconditioner(Ap) # left preconditioning
+    r -= Ap
+  var p = r
+
+  var it = 0
+  var dotr =  dot(r, r)
+  while it < maxIter:
+    pPre[0..<n] = p
+    preconditioner(pPre) # right preconditioning
+    linear(pPre, Ap)
+    preconditioner(Ap) # left preconditioning
+
+    let curv = dot(p, Ap)
+    let alpha = dotr / curv
+    x += alpha * p
+    r -= alpha * Ap
+    let dotrNew = dot(r, r)
+    if norm(r, 1) < tol: break
+    let beta = dotrNew / dotr
+    dotr = dotrNew
+    p *= beta
+    p += r
+
+  preconditioner(x) # right preconditioning
+
+
+proc cg*(A: Matrix, b: Vector, x: var Vector, maxIter=1000, tol=1e-4,
+         init=true) =
+  ## Solves Ax = b by conjugate gradient.
+  ## A must be psd.
   if A.shape[0] != A.shape[1]:
     raise newException(ValueError, "A.shape[0] != A.shape[1].")
-  let n = len(A)
-  x[.. ^1] = 0.0
-  var r = b
-  var p = b
-  var Ap = zeros([n])
-  for it in 0..<maxIter:
-    mvmul(A, p, Ap)
-    let alpha = dot(r, p) / dot(p, Ap)
-    p *= alpha
-    x += p
-    Ap *= alpha
-    let norm = dot(r, r)
-    let normNew = norm + dot(Ap, Ap) - 2 * dot(r, Ap)
-    if normNew < tol: break
-    let beta = normNew / norm
-    r -= Ap
-    p *= beta / alpha
-    p += r
+
+  proc linearOp(p: Vector, Ap: var Vector) = mvmul(A, p, Ap)
+
+  cg(linearOp, b, x, maxIter, tol, init)
 
 
-proc cg*(linear: (Vector, var Vector)->void, b: Vector, 
-         x: var Vector, maxIter=1000, tol=1e-4) =
-  let n = len(b)
-  x[.. ^1] = 0.0
-  var r = b
-  var p = b
-  var Ap = zeros([n])
-  for it in 0..<maxIter:
-    linear(p, Ap)
-    let alpha = dot(r, p) / dot(p, Ap)
-    p *= alpha
-    x += p
-    Ap *= alpha
-    let norm = dot(r, r)
-    let normNew = norm + dot(Ap, Ap) - 2 * dot(r, Ap)
-    if normNew < tol: break
-    let beta = normNew / norm
-    r -= Ap
-    p *= beta / alpha
-    p += r
+proc cg*(A: Matrix, b: Vector, x: var Vector, preconditioner: Matrix,
+         maxIter=1000, tol=1e-4, init=true) =
+  ## Solves Ax = b by conjugate gradient with preconditioner.
+  ## A must be psd.
+  if A.shape[0] != A.shape[1]:
+    raise newException(ValueError, "A.shape[0] != A.shape[1].")
+  if preconditioner.shape[0] != preconditioner.shape[1]:
+    raise newException(ValueError, "preconditioner is not a square matrix.")
+
+  proc linearOp(p: Vector, Ap: var Vector) = mvmul(A, p, Ap)
+
+  var pPre = zeros([preconditioner.shape[0]])
+  proc pre(p: var Vector) = 
+    mvmul(preconditioner, p, pPre)
+    for i in 0..<len(pPre):
+      p[i] = pPre[i]
+
+  cg(linearOp, b, x, maxIter, tol, init, pre)
 
 
-proc cgnr*(A: Matrix, b: Vector, x: var Vector, maxIter=1000, tol=1e-4) =
-  let n = len(A)
-  let m = len(x)
-  x[.. ^1] = 0.0
-  var r = vmmul(b, A) # len(r) = m
-  var p = r
-  var Ap = zeros([n]) 
-  var AAp = zeros([m]) # A^\top A p
-  for it in 0..<maxIter:
-    mvmul(A, p, Ap)
-    let alpha = dot(r, p) / dot(Ap, Ap)
-    p *= alpha
-    x += p
-    vmmul(Ap, A, AAp)
-    AAp *= alpha
-    let norm = dot(r, r)
-    let normNew = norm + dot(AAp, AAp) - 2 * dot(r, AAp)
-    if normNew < tol: break
-    let beta = normNew / norm
-    r -= AAp
-    p *= beta / alpha
-    p += r
+proc cgnr*(A: Matrix, b: Vector, x: var Vector, maxIter=1000, tol=1e-4,
+           init=true) =
+  ## Solves A^\top A x = A^\top b by conjugate gradient.
+  var Ap = zeros([A.shape[0]])
 
+  proc linearOp(p: Vector, ATAp: var Vector) =
+     mvmul(A, p, Ap)
+     vmmul(Ap, A, ATAP)
 
-when isMainModule:
-  var A = @[@[1.0, 1.0], @[1.0, 4.0]].toMatrix
-  var b = @[3.0, 9.0]
-  var x = @[0.0, 0.0]
-  cg(A, b, x)
-
-  var A2 = @[@[1.0, -2.0, 5.0], @[-0.3, 1.1, 0.5], @[0.4, -0.5, -0.2], @[2.0, 3.0, 0.1]].toMatrix
-  var x2 = @[2.0, -1.0, 4.0]
-  var b2 = mvmul(A2, x2)
-  cgnr(A2, b2, x2)
-  echo(x2)
-
-  proc linear(p: Vector, x: var Vector) =
-    vmmul(mvmul(A2, p), A2, x)
-  cg(linear, vmmul(b2, A2), x2)
-  echo(x2)
+  cg(linearOp, vmmul(b, A), x, maxIter, tol, init)
