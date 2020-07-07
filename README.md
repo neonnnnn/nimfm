@@ -12,7 +12,7 @@ nimfm provides
  - Not-only second-order but also higher-order factorization machines [3].
  - Coordinate descent (a.k.a alternative least squares) solver.
  - Stochastic gradient descent solver with some step-size scheduling methods [4].
- - Greedy coordinate descent [5] and Frank-Wolfe [6] (with some heuristics)) solvers for convex factorization machines are also provided.
+ - Greedy coordinate descent [5] and Hazan's (Frank-Wolfe) algorithm [6] (with some heuristics) solvers for convex factorization machines.
  - Various loss functions: Squared, Huber, SquaredHinge, and Logistic.
  - Binary file for end users.
 
