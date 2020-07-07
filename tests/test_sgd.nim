@@ -1,6 +1,7 @@
 import unittest
 import utils, sgd_slow
-import nimfm/loss, nimfm/dataset, nimfm/tensor, nimfm/factorization_machine
+import nimfm/loss, nimfm/dataset, nimfm/tensor
+import nimfm/factorization_machine, nimfm/fm_base
 import nimfm/optimizers/sgd
 import fm_slow
 
@@ -27,9 +28,9 @@ suite "Test stochastic gradient descent":
             task = regression, degree = degree, nComponents = nComponents,
             fitLower = fitLower, fitLinear = false,
             fitIntercept = fitIntercept, randomState = 1)
-          var sgd = newSGD(maxIter = 10, verbose = false, tol = 0)
+          var sgd = newSGD(maxIter = 10, verbose = 0, tol = 0)
           sgd.fit(X, y, fm)
-          for j in 0..<nComponents:
+          for j in 0..<d:
             check fm.w[j] == 0.0
 
 
@@ -48,7 +49,7 @@ suite "Test stochastic gradient descent":
             fitLower = fitLower, fitLinear = fitLinear,
             fitIntercept = false, randomState = 1)
           var sgd = newSGD(
-            maxIter = 10, verbose = false, tol = 0
+            maxIter = 10, verbose = 0, tol = 0
           )
           sgd.fit(X, y, fm)
           check fm.intercept == 0.0
@@ -69,7 +70,7 @@ suite "Test stochastic gradient descent":
               fitLower = fitLower, fitLinear = fitLinear, warmStart = true,
               fitIntercept = fitIntercept, randomState = 1)
             var sgdWarm = newSGD(
-              maxIter = 1, verbose = false, tol = 0, shuffle = false
+              maxIter = 1, verbose = 0, tol = 0, shuffle = false
             )
             for i in 0..<10:
               sgdWarm.fit(X, y, fmWarm)
@@ -79,7 +80,7 @@ suite "Test stochastic gradient descent":
               fitIntercept = fitIntercept, randomState = 1)
 
             var sgd = newSGD(
-              maxIter = 10, verbose = false, tol = 0, shuffle = false
+              maxIter = 10, verbose = 0, tol = 0, shuffle = false
             )
             sgd.fit(X, y, fm)
 
@@ -117,7 +118,7 @@ suite "Test stochastic gradient descent":
               fitLower = fitLower, fitLinear = fitLinear,
               fitIntercept = fitIntercept, randomState = 1)
             var sgd = newSGD(
-              maxIter = 5, verbose = false, tol = 0
+              maxIter = 5, verbose = 0, tol = 0
             )
             sgd.fit(X, y, fm)
 
@@ -143,7 +144,7 @@ suite "Test stochastic gradient descent":
               alpha = 1e-9, beta = 1e-9, fitIntercept = fitIntercept,
               randomState = 1)
             var sgd = newSGD(
-              maxIter = 20, verbose = false, tol = 0
+              maxIter = 20, verbose = 0, tol = 0
             )
             fm.init(X)
             let scoreBefore = fm.score(X, y)
@@ -165,23 +166,22 @@ suite "Test stochastic gradient descent":
 
             var fmWeakReg = newFactorizationMachine(
               task = regression, degree = degree, nComponents = nComponents,
-              fitLower = fitLower, fitLinear = fitLinear, warmStart = true,
+              fitLower = fitLower, fitLinear = fitLinear, warmStart = false,
               fitIntercept = fitIntercept, randomState = 1,
-              alpha0 = 0, alpha = 0, beta = 0)
+              alpha0 = 1e-4, alpha = 1e-4, beta = 1e-4)
             var sgd = newSGD(
-              maxIter = 100, verbose = false, tol = 0
+              maxIter = 200, verbose = 0, tol = 0
             )
             sgd.fit(X, y, fmWeakReg)
             
             var fmStrongReg = newFactorizationMachine(
               task = regression, degree = degree, nComponents = nComponents,
-              fitLower = fitLower, fitLinear = fitLinear, warmStart = true,
+              fitLower = fitLower, fitLinear = fitLinear, warmStart = false,
               fitIntercept = fitIntercept, randomState = 2,
-              alpha0 = 1000, alpha = 1000, beta = 1000)
+              alpha0 = 10000, alpha = 10000, beta = 10000)
+
             sgd.fit(X, y, fmStrongReg)
 
             check fmWeakReg.score(X, y) < fmStrongReg.score(X, y)
-
-            check abs(fmWeakReg.intercept) >= abs(fmStrongReg.intercept)
             check norm(fmWeakReg.w, 2) >= norm(fmStrongReg.w, 2)
             check norm(fmWeakReg.P, 2) >= norm(fmStrongReg.P, 2)

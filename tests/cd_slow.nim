@@ -1,14 +1,14 @@
-import nimfm/loss, nimfm/tensor, nimfm/optimizers/base
+import nimfm/tensor, nimfm/optimizers/optimizer_base
 import sequtils, math
 import fm_slow, kernels_slow, fit_linear_slow, utils
 
 type
-  CoordinateDescentSlow* = ref object of BaseCSCOptimizer
+  CDSlow* = ref object of BaseCSCOptimizer
     ## Coordinate descent solver for test.
 
-proc newCoordinateDescentSlow*(maxIter = 100, verbose = true, tol = 1e-3):
-                               CoordinateDescentSlow =
-  result = CoordinateDescentSlow(maxIter: maxIter, tol: tol, verbose: verbose)
+proc newCDSlow*(maxIter = 100, verbose = 1, tol = 1e-3):
+                               CDSlow =
+  result = CDSlow(maxIter: maxIter, tol: tol, verbose: verbose)
 
 
 proc predict(P: Tensor, w: Vector, intercept: float64, X: Matrix,
@@ -30,7 +30,7 @@ proc predict(P: Tensor, w: Vector, intercept: float64, X: Matrix,
   for order in 0..<nOrders:
     for s in 0..<nComponents:
       for i in 0..<nSamples:
-        let anova = anovaSlow(X, P, i, degree-order, order,
+        let anova = anovaSlow(X, P[order], i, degree-order,
                               s, nFeatures, nAugments)
         yPred[i] += anova
 
@@ -57,26 +57,26 @@ proc computeDerivatives(P: Tensor, X: Matrix, dA: var Vector,
       dA[i] *= X[i, j]
 
 
-proc update(P: Tensor, X: Matrix, y: seq[float64], yPred: seq[float64],
-            beta: float64, degree, order, s, j, nAugments: int,
-            loss: LossFunction, dA: var Vector): float64 =
+proc update[L](P: Tensor, X: Matrix, y: seq[float64], yPred: seq[float64],
+               beta: float64, degree, order, s, j, nAugments: int,
+               loss: L, dA: var Vector): float64 =
   result = beta * P[order, s, j]
   let nSamples = X.shape[0]
   var invStepSize: float64 = 0.0
   
   computeDerivatives(P, X, dA, degree, order, s, j, nAugments)
   for i in 0..<nSamples:
-    result += loss.dloss(yPred[i], y[i]) * dA[i]
+    result += loss.dloss(y[i], yPred[i]) * dA[i]
     invStepSize += dA[i]^2
 
   invStepSize = invStepSize*loss.mu + beta
   result /= invStepSize
 
 
-proc epoch(X: Matrix, y: seq[float64], yPred: var seq[float64],
-           P: var Tensor, beta: float64, degree, order, nAugments: int,
-           loss: LossFunction, dA: var Vector, w: Vector,
-           intercept: float64): float64 =
+proc epoch[L](X: Matrix, y: seq[float64], yPred: var seq[float64],
+              P: var Tensor, beta: float64, degree, order, nAugments: int,
+              loss: L, dA: var Vector, w: Vector,
+              intercept: float64): float64 =
   result = 0.0
   let nFeatures = X.shape[1]
   let nComponents = P.shape[1]
@@ -90,8 +90,8 @@ proc epoch(X: Matrix, y: seq[float64], yPred: var seq[float64],
       predict(P, w, intercept, X, yPred, degree)
 
 
-proc fit*(self: CoordinateDescentSlow, X: Matrix, y: seq[float64],
-          fm: var FMSlow) =
+proc fit*[L](self: CDSlow, X: Matrix, y: seq[float64],
+             fm: var FMSlow[L]) =
   fm.init(X)
   let y = fm.checkTarget(y)
   let
@@ -105,7 +105,7 @@ proc fit*(self: CoordinateDescentSlow, X: Matrix, y: seq[float64],
     fitLinear = fm.fitLinear
     fitIntercept = fm.fitIntercept
     nAugments = fm.nAugments
-    loss = newLossFunction(fm.loss)
+    loss = fm.loss
 
   # caches
   var

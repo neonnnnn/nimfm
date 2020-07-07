@@ -146,7 +146,7 @@ proc createUserItemFeatureDataset(indices: openarray[int]) =
   let nTrain = int(8*X.nSamples/10)
   (XTr, yTr) = shuffle(XAll, y, indices[0..<nTrain])
   (XTe, yTe) = shuffle(XAll, y, indices[nTrain..^1])
-  dumpSVMLightFile("ml100k_user_item_feature_all.svm", XAll, y)
+  dumpSVMLightFile("ml-100k_user_item_feature_all.svm", XAll, y)
   dumpSVMLightFile("ml-100k_user_item_feature_train.svm", Xtr, yTr)
   dumpSVMLightFile("ml-100k_user_item_feature_test.svm", Xte, yTe)
   

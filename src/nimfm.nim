@@ -1,13 +1,7 @@
-import nimfm/factorization_machine
-import nimfm/optimizers/coordinate_descent
-import nimfm/optimizers/sgd
-import nimfm/loss
-import nimfm/dataset
-import nimfm/metrics
-import tables, strutils, sugar, sequtils, math
+import nimfm/modules
+export modules
+import strutils, sugar, sequtils, math, tables, strformat
 
-export factorization_machine, loss, dataset, metrics
-export sgd, coordinate_descent
 
 # The followings are for end users
 proc echoDataInfo(X: BaseDataset) =
@@ -18,13 +12,13 @@ proc echoDataInfo(X: BaseDataset) =
   echo("   Minimum value      : ", X.min)
 
 
-proc eval(fm: FactorizationMachine, task: TaskKind, test: string,
-          predict: string, nFeatures: int, verbose: bool) =
+proc eval[L](fm: FactorizationMachine[L], task: TaskKind, test: string,
+             predict: string, nFeatures: int, verbose: int) =
   var X: CSRDataset
   var y: seq[float64]
-  if verbose: echo("Load test data.")
+  if verbose > 0: echo("Load test data.")
   loadSVMLightFile(test, X, y, nFeatures)
-  if verbose: echoDataInfo(X)
+  if verbose > 0: echoDataInfo(X)
   let yPred = fm.decisionFunction(X)
   case task
   of regression:
@@ -39,15 +33,15 @@ proc eval(fm: FactorizationMachine, task: TaskKind, test: string,
     f.close()
 
 
-proc train(task: TaskKind, train: string, test = "", degree = 2,
-           nComponents = 30, alpha0 = 1e-7, alpha = 1e-5, beta = 1e-5,
-           loss = Squared, fitLower = explicit, fitLinear = true,
-           fitIntercept = true, scale = 0.1, randomState = 1,
-           solver = "cd", maxIter = 100, tol = 1e-5, eta0 = 0.1,
-           scheduling = optimal, powerIt = 1.0, dump = "", load = "",
-           predict = "", nFeatures = -1, verbose = true) =
+proc trainInner[L](task: TaskKind, train: string, test = "", degree = 2,
+                   nComponents = 30, alpha0 = 1e-7, alpha = 1e-5, beta = 1e-5,
+                   loss: L=newSquared(), fitLower = explicit, fitLinear = true,
+                   fitIntercept = true, scale = 0.1, randomState = 1,
+                   solver = "cd", maxIter = 100, tol = 1e-5, eta0 = 0.1,
+                   scheduling = optimal, powerIt = 1.0, dump = "", load = "",
+                   predict = "", nFeatures = -1, verbose = 1) =
   ## training a factorization machine
-  var fm: FactorizationMachine
+  var fm: FactorizationMachine[L]
   if load == "":
     fm = newFactorizationMachine(
       task = task, degree = degree, nComponents = nComponents, alpha0 = alpha0,
@@ -56,20 +50,20 @@ proc train(task: TaskKind, train: string, test = "", degree = 2,
       randomState = randomState, scale = scale
     )
   else:
-    fm = load(load, true)
+    load(fm, load, true, loss)
   case solver
     of "cd", "als":
       var X: CSCDataset
       var y: seq[float64]
       loadSVMLightFile(train, X, y, nFeatures)
-      if verbose: echoDataInfo(X)
-      var optim = newCoordinateDescent(maxIter, verbose, tol)
+      if verbose > 0: echoDataInfo(X)
+      var optim = newCD(maxIter, verbose, tol)
       optim.fit(X, y, fm)
     of "sgd":
       var X: CSRDataset
       var y: seq[float64]
       loadSVMLightFile(train, X, y, nFeatures)
-      if verbose: echoDataInfo(X)
+      if verbose > 0: echoDataInfo(X)
       var optim = newSGD(eta0, scheduling, powerIt, maxIter, verbose, tol)
       optim.fit(X, y, fm)
     else:
@@ -80,14 +74,60 @@ proc train(task: TaskKind, train: string, test = "", degree = 2,
   if dump != "": fm.dump(dump)
 
 
-proc test(task: TaskKind, test, load: string, dump = "",
-          predict = "", nFeatures = -1, verbose = true) =
-  ## test a factorization machine
-  var fm = load(load, false)
+proc train(task: TaskKind, train: string, test = "", degree = 2,
+           nComponents = 30, alpha0 = 1e-7, alpha = 1e-5, beta = 1e-5,
+           loss="squared", fitLower = explicit, fitLinear = true,
+           fitIntercept = true, scale = 0.1, randomState = 1,
+           solver = "cd", maxIter = 100, tol = 1e-5, eta0 = 0.1,
+           scheduling = optimal, powerIt = 1.0, threshold=0.1,
+           dump = "", load = "", predict = "", nFeatures = -1, verbose = 1) =
+  ## training a factorization machine
+  if loss == "squared":
+    trainInner(task, train, test, degree, nComponents, alpha0, alpha, beta,
+               newSquared(), fitLower, fitLinear, fitIntercept, scale,
+               randomState, solver, maxIter, tol, eta0, scheduling, powerIt,
+               dump, load, predict, nFeatures, verbose)
+  elif loss == "huber":
+    trainInner(task, train, test, degree, nComponents, alpha0, alpha, beta,
+               newHuber(threshold), fitLower, fitLinear, fitIntercept, scale,
+               randomState, solver, maxIter, tol, eta0, scheduling, powerIt,
+               dump, load, predict, nFeatures, verbose)
+  elif loss == "squared_hinge":
+    trainInner(task, train, test, degree, nComponents, alpha0, alpha, beta,
+               newSquaredHinge(), fitLower, fitLinear, fitIntercept, scale,
+               randomState, solver, maxIter, tol, eta0, scheduling, powerIt,
+               dump, load, predict, nFeatures, verbose)
+  elif loss == "logistic":
+    trainInner(task, train, test, degree, nComponents, alpha0, alpha, beta,
+               newLogistic(), fitLower, fitLinear, fitIntercept, scale,
+               randomState, solver, maxIter, tol, eta0, scheduling, powerIt, 
+               dump, load, predict, nFeatures, verbose)
+  else:
+    raise newException(ValueError, fmt"loss {loss} is not supported.")
+
+proc testInner[L](task: TaskKind, test, load: string, dump = "", 
+                  loss: L = newSquared(), predict = "", nFeatures = -1,
+                  verbose = 1) =
+  var fm: FactorizationMachine[L]
+  load(fm, load, false, loss)
   eval(fm, task, test, predict, nFeatures, verbose)
   if dump != "": fm.dump(dump)
 
 
+proc test(task: TaskKind, test, load: string, dump = "",  loss="squared", 
+          predict = "", nFeatures = -1, verbose = 1) =
+  ## test a factorization machine
+  if loss == "squared":
+    testInner(task, test, load, dump, newSquared(), predict, nFeatures, verbose)
+  elif loss == "huber":
+    testInner(task, test, load, dump, newHuber(), predict, nFeatures, verbose)
+  elif loss == "squared_hinge":
+    testInner(task, test, load, dump, newSquaredHinge(), predict, nFeatures, 
+              verbose)
+  elif loss == "logistic":
+    testInner(task, test, load, dump, newLogistic(), predict, nFeatures, verbose)
+
+    
 when isMainModule:
   import cligen; include cligen/mergeCfgEnv
 
@@ -120,12 +160,12 @@ Run "$command help" to get *comprehensive* help.$ifVersion"""
      "alpha0": "Regularization strength for intercept (bias) term",
      "alpha": "Regularization sterngth for linear term",
      "beta": "Regularization strength for interaction term",
-     "loss": "Optimized loss function, Squared, SquaredHinge, or Logistic. " &
-             "Ignored when --task:r",
+     "loss": "Optimized loss function, squared, huber, squared_hinge, " &
+             "or logistic",
      "fit-lower": "Whether and how to fit lower-order terms. " &
                   "explicit, augment, or none.",
-     "fit-linear": "Whether to fit linear term or not",
-     "fit-intercept": "Whether to fit intercept term or not",
+     "fit-linear": "Whether to fit linear term or not (0 or 1)",
+     "fit-intercept": "Whether to fit intercept term or not (0 or 1)",
      "scale": "Standard derivation for initialization of interaction weights",
      "random-state": "Seed od the pseudo random number generator. " &
                      "0 is not allowed.",
@@ -136,12 +176,13 @@ Run "$command help" to get *comprehensive* help.$ifVersion"""
      "scheduling": "Step-size scheduling method for sgd. " &
                    "optimal, constant, pegasos, or invscaling",
      "power-it": "Hyper-parameter for step-size scheduling",
+     "threshold": "Hyper-parameter for huber loss",
      "dump": "Filename for dumping model",
      "load": "Filename for loading model",
      "predict": "Filename for prediction of test data",
      "n-features": "Number of features. If -1 (default), the maxium index " &
                    "in training data is used.",
-     "verbose": "Whether to print information"
+     "verbose": "Verbosity level (0 or 1)."
     },
     usage = hluse,
     short = {"": '\0'}],

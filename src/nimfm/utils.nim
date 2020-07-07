@@ -1,4 +1,4 @@
-import tables, algorithm, sequtils, sugar, math
+import tables, algorithm, sequtils, math
 
 type
   LabelEncoderObj[T] = object
@@ -16,6 +16,18 @@ proc argsort*[T](a: T, order=SortOrder.Ascending): seq[int] =
     sort(result,  proc(i, j: int ): int = cmp(a[i], a[j]))
   of SortOrder.Descending:
     sort(result,  proc(i, j: int ): int = -cmp(a[i], a[j]))
+
+
+proc argmin*[T](a: seq[T]): int =
+  result = 0
+  for i in 1..<len(a):
+    if a[i] < a[result]: result = i
+
+
+proc argmax*[T](a: seq[T]): int =
+  result = 0
+  for i in 1..<len(a):
+    if a[i] > a[result]: result = i
 
 
 proc expit*(x: float64): float64  =  exp(min(0.0, x)) / (1.0 + exp(-abs(x)))

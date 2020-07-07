@@ -1,54 +1,102 @@
 import math
 
 type
-  LossFunctionKind* = enum
-    Squared = "Squared",
-    SquaredHinge = "SquaredHinge",
-    Logistic = "Logistic"
+  Squared* = ref object
 
-  LossFunctionObj* = object of RootObj
-    kind: LossFunctionKind
-    mu*: float64
+  SquaredHinge* = ref object
 
-  LossFunction* = ref LossFunctionObj
+  Logistic* = ref object
 
 
-proc newLossFunction*(kind: LossFunctionKind): LossFunction =
-  var mu: float64
-  case kind
-  of Squared: mu = 1.0
-  of SquaredHinge: mu = 2.0
-  of Logistic: mu = 0.25
-  result = LossFunction(kind: kind, mu: mu)
+  Huber* = ref object
+    threshold: float64
 
 
-proc loss*(lossFunc: LossFunction, p, y: float64): float64 =
-  case lossFunc.kind
-  of Squared: return 0.5 * (p-y)^2
-  of SquaredHinge:
-    let z = 1 - p*y
-    if z > 0:
-      return z*z
-    else:
-      return 0
-  of Logistic:
-    let z = p*y
-    if z > 0:
-      return ln(1+exp(-z))
-    else:
-      return ln(exp(z)+1) - z
+proc newSquared*(): Squared = new(Squared)
 
 
-proc dloss*(lossFunc: LossFunction, p, y: float64): float64 =
-  case lossFunc.kind
-  of Squared: return p-y
-  of SquaredHinge:
-    let z = 1 - p*y
-    if z > 0: return -2 * y * z
-    else: return 0
-  of Logistic:
-    let z = p * y
-    if z > 0:
-      return -y * exp(-z) / (1+exp(-z))
-    else:
-      return y*exp(z)/(exp(z)+1) - y
+proc loss*(self: Squared, y, p: float64): float64 = 0.5 * (y-p)^2
+
+
+proc dloss*(self: Squared, y, p: float64): float64 = p-y
+
+
+proc ddloss*(self: Squared, y, p: float64): float64 = 1.0
+
+
+proc mu*(self: Squared): float64 = 1.0
+
+
+proc newSquaredHinge*(): SquaredHinge = new(SquaredHinge)
+
+
+proc loss*(self: SquaredHinge, y, p: float64): float64 = max(1-p*y, 0)^2
+
+
+proc dloss*(self: SquaredHinge, y, p: float64): float64 =
+  let z = 1-p*y
+  if z > 0: result = -2*y*z
+  else: result = 0.0
+
+
+proc ddloss*(self: SquaredHinge, y, p: float64): float64 =
+  let z = 1-p*y
+  if z > 0: result = 2.0
+  else: result = 0.0
+
+
+proc mu*(self: SquaredHinge): float64 = 2.0
+
+
+proc newLogistic*(): Logistic = new(Logistic)
+
+
+proc loss*(self: Logistic, y, p: float64): float64 =
+  let z = p * y
+  if z > 0:
+    result = ln(1+exp(-z))
+  else:
+    result = ln(exp(z)+1) - z
+
+
+proc dloss*(self: Logistic, y, p: float64): float64 =
+  let z = p * y
+  if z > 0:
+    result =  -y * exp(-z) / (1+exp(-z))
+  else:
+    result =  -y / (exp(z)+1)
+
+
+proc ddloss*(self: Logistic, y, p: float64): float64 =
+  let z = p*y
+  if z > 0:
+    result =  exp(-z) / ((1+exp(-z))^2)
+  else:
+    result = exp(z) / ((1+exp(z))^2)
+
+
+proc mu*(self: Logistic): float64 = 0.25
+
+
+proc newHuber*(threshold=1.0): Huber = Huber(threshold: threshold)
+
+
+proc loss*(self: Huber, y, p: float64): float64 =
+  let z = abs(y - p)
+  if z < self.threshold: result = 0.5 * z^2
+  else: result = self.threshold * (z - 0.5*self.threshold)
+
+
+proc dloss*(self: Huber, y, p: float64): float64 =
+  let z = abs(y-p)
+  if z < self.threshold: result = y - p
+  else: result = self.threshold
+
+
+proc ddloss*(self: Huber, y, p: float64): float64 =
+  let z = abs(y-p)
+  if z < self.threshold: result = 1.0
+  else: result = 0.0
+
+
+proc mu*(self: Huber): float64 = 1.0

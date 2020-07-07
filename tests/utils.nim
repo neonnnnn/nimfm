@@ -1,4 +1,4 @@
-import nimfm/factorization_machine, nimfm/tensor, nimfm/dataset
+import nimfm/factorization_machine, nimfm/tensor, nimfm/dataset, nimfm/fm_base
 import sequtils, random, unittest
 
 

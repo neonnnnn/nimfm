@@ -1,4 +1,4 @@
-import sequtils, sugar, parseutils, math, os, strformat
+import sequtils, sugar, parseutils, math, os, strformat, random
 
 
 const Numbers = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'}
@@ -22,6 +22,9 @@ type
 
   NormKind* = enum
     l1, l2, linfty
+
+
+func shape*(self: BaseDataset): array[2, int] = [self.nSamples, self.nFeatures]
 
 
 func nnz*(self: BaseDataset): int =
@@ -187,9 +190,27 @@ func `[]`*(X: CSCDataset, slice: HSlice[int, BackwardsIndex]): CSCDataset =
   result = X[slice.a..(X.nSamples-int(slice.b))]
 
 
+func shuffle*[T](X: CSRDataset, y: seq[T]):
+                 tuple[XShuffled: CSRDataset, yShuffled: seq[T]] =
+  ## Shuffles the dataset X and target y.
+  if len(y) != X.nSamples:
+    raise newException(ValueError, "X.nSamples != len(y)")
+  var indices = toSeq(0..<len(y))
+  var j, tmp: int
+  for i in 0..<len(y):
+    j = rand(len(y)-1-i)
+    tmp = indices[i]
+    indices[i] = indices[i+j]
+    indices[i+j] = tmp
+  result = shuffle(X, y, indices)
+
+
 func shuffle*[T](X: CSRDataset, y: seq[T], indices: openarray[int]):
                  tuple[XShuffled: CSRDataset, yShuffled: seq[T]] =
   ## Shuffles the dataset X and target y by using indices.
+  if len(y) != X.nSamples:
+    raise newException(ValueError, "X.nSamples != len(y)")
+
   var yShuffled = newSeq[T](len(indices))
   for ii, i in indices:
     yShuffled[ii] = y[i]

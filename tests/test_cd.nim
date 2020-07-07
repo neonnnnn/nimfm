@@ -1,6 +1,7 @@
 import unittest
 import utils, cd_slow
-import nimfm/loss, nimfm/dataset, nimfm/tensor, nimfm/factorization_machine
+import nimfm/loss, nimfm/dataset, nimfm/tensor
+import nimfm/factorization_machine, nimfm/fm_base
 import nimfm/optimizers/coordinate_descent
 import fm_slow
 
@@ -27,9 +28,9 @@ suite "Test coordinate descent":
             task = regression, degree = degree, nComponents = nComponents,
             fitLower = fitLower, fitLinear = false,
             fitIntercept = fitIntercept, randomState = 1)
-          var cd = newCoordinateDescent(maxIter = 10, verbose = false, tol = 0)
+          var cd = newCD(maxIter = 10, verbose = 0, tol = 0)
           cd.fit(X, y, fm)
-          for j in 0..<nComponents:
+          for j in 0..<d:
             check fm.w[j] == 0.0
 
 
@@ -47,8 +48,8 @@ suite "Test coordinate descent":
             task = regression, degree = degree, nComponents = nComponents,
             fitLower = fitLower, fitLinear = fitLinear,
             fitIntercept = false, randomState = 1)
-          var cd = newCoordinateDescent(
-            maxIter = 10, verbose = false, tol = 0
+          var cd = newCD(
+            maxIter = 10, verbose = 0, tol = 0
           )
           cd.fit(X, y, fm)
           check fm.intercept == 0.0
@@ -68,8 +69,8 @@ suite "Test coordinate descent":
               task = regression, degree = degree, nComponents = nComponents,
               fitLower = fitLower, fitLinear = fitLinear, warmStart = true,
               fitIntercept = fitIntercept, randomState = 1)
-            var cdWarm = newCoordinateDescent(
-              maxIter = 1, verbose = false, tol = 0
+            var cdWarm = newCD(
+              maxIter = 1, verbose = 0, tol = 0
             )
             for i in 0..<10:
               cdWarm.fit(X, y, fmWarm)
@@ -79,8 +80,8 @@ suite "Test coordinate descent":
               fitLower = fitLower, fitLinear = fitLinear,
               fitIntercept = fitIntercept, randomState = 1)
 
-            var cd = newCoordinateDescent(
-              maxIter = 10, verbose = false, tol = 0
+            var cd = newCD(
+              maxIter = 10, verbose = 0, tol = 0
             )
             cd.fit(X, y, fm)
 
@@ -109,7 +110,7 @@ suite "Test coordinate descent":
               task = regression, degree = degree, nComponents = nComponents,
               fitLower = fitLower, fitLinear = fitLinear,
               fitIntercept = fitIntercept, randomState = 1)
-            var cdSlow = newCoordinateDescentSlow(maxIter = 3, tol = 0)
+            var cdSlow = newCDSlow(maxIter = 3, tol = 0)
             cdSlow.fit(XMat, y, fmSlow)
 
             # fit fast version
@@ -117,8 +118,8 @@ suite "Test coordinate descent":
               task = regression, degree = degree, nComponents = nComponents,
               fitLower = fitLower, fitLinear = fitLinear,
               fitIntercept = fitIntercept, randomState = 1)
-            var cd = newCoordinateDescent(
-              maxIter = 3, verbose = false, tol = 0
+            var cd = newCD(
+              maxIter = 3, verbose = 0, tol = 0
             )
             cd.fit(X, y, fm)
 
@@ -143,8 +144,8 @@ suite "Test coordinate descent":
               fitLower = fitLower, fitLinear = fitLinear, alpha0 = 1e-9,
               alpha = 1e-9, beta = 1e-9,
               fitIntercept = fitIntercept, randomState = 1)
-            var cd = newCoordinateDescent(
-              maxIter = 20, verbose = false, tol = 0
+            var cd = newCD(
+              maxIter = 20, verbose = 0, tol = 0
             )
             fm.init(X)
             let scoreBefore = fm.score(X, y)
@@ -169,8 +170,8 @@ suite "Test coordinate descent":
               fitLower = fitLower, fitLinear = fitLinear, warmStart = true,
               fitIntercept = fitIntercept, randomState = 1,
               alpha0 = 0, alpha = 0, beta = 0)
-            var cd = newCoordinateDescent(
-              maxIter = 100, verbose = false, tol = 0
+            var cd = newCD(
+              maxIter = 100, verbose = 0, tol = 0
             )
             cd.fit(X, y, fmWeakReg)
             
