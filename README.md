@@ -4,23 +4,30 @@ A library for factorization machines in [Nim](https://nim-lang.org/).
 [![Actions Status](https://github.com/neonnnnn/nimfm/workflows/Build/badge.svg)](https://github.com/neonnnnn/nimfm/actions)
 
 
-Factorization machines (FMs)[1, 2] are machine learning models using second-order
-feature combinations (e.g., x1 * x2, x2 * x5) efficiently.
+Factorization machines (FMs)[1, 2] are machine learning models using second-order feature combinations (e.g., x1 * x2, x2 * x5) efficiently.
 
 nimfm provides
 
  - Not-only second-order but also higher-order factorization machines [3].
  - Coordinate descent (a.k.a alternative least squares) solver.
  - Stochastic gradient descent solver with some step-size scheduling methods [4].
- - Greedy coordinate descent [5] and Hazan's (Frank-Wolfe) algorithm [6] (with some heuristics) solvers for convex factorization machines.
+ - AdaGrad solver [5].
+ - Greedy coordinate descent [6] and Hazan's (Frank-Wolfe) algorithm [7] (with some heuristics) solvers for convex factorization machines.
+ - Some sparse regularizers [8,9,10,11] for feature selection and feature interaction selection, and various optimizers for such regularizers [11,12,13,14].
  - Various loss functions: Squared, Huber, SquaredHinge, and Logistic.
  - Binary file for end users.
 
 ## Data format
 nimfm uses its own data type for datasets: `CSRDataset` and `CSCDataset` and provides procs for loading **[libsvm](https://www.csie.ntu.edu.tw/~cjlin/libsvm/)/[svmlight](http://svmlight.joachims.org/) format** file as such datasets.
-`CSRDataset` is for `SGD` solver and `CSCDataset` is for `CD`, `GreedyCD`, and `Hazan` solvers.
-The two-dimensional sequence `seq[seq[float64]]` is easily transformed to such
-datasets by `toCSR` and `toCSC`.
+`CSRDataset` is for `SGD`, `Adagrad`, `PSGD`, `Katyusha`, `PGD`, `MBPSGD`, `FISTA` and `NMAPGD` solvers.
+`CSCDataset` is for `CD`, `GreedyCD`, `Hazan`, `PCD`, and `PBCD` solvers.
+
+In addition, nimfm provides binary data formats: `StreamCSRDataset` and `StreamCSCDataset`.
+They have only parts of a dataset in main memory and therefore are useful for a very large-scale dataset.
+`convertSVMLightFile` converts a svmlight format file to a `StreamCSRDataset` format file. 
+`transposeFile` converts a `StreamCSRDataset` format file to a `StreamCSCDataset` format file.
+
+The two-dimensional sequence `seq[seq[float64]]` can be easily transformed to such datasets by `toCSR` and `toCSC`.
 
 
 ## Installation for Nim users
@@ -56,10 +63,26 @@ Then, nimfm binary will be created in the ./bin directory.
 4. L. Bottou. Stochastic gradient descent tricks. Neural Networks, Tricks of the Trade, Reloaded, pp. 430–445, 
  Lecture Notes in Computer Science (LNCS 7700), Springer, 2012.
 
-5. M. Blondel, A. Fujino, and N. Ueda. Convex factorization machines. In ECML-PKDD, pp. 19--35, 2015.
+5. J. Duchi, E. Hazan, and Y. Singer. Adaptive subgradient methods for online learning and stochastic optimization. Journal of Machine Learning Research, 12(Jul):2121-–2159, 2011. 
 
-6. M. Yamada, W. Lian, A. Goyal, J. Chen, K. Wimalawarne, S. A. Khan, S. Kaski, H. Mamitsuka, and Y. Chang.
+6. M. Blondel, A. Fujino, and N. Ueda. Convex factorization machines. In ECML-PKDD, pp. 19--35, 2015.
+
+7. M. Yamada, W. Lian, A. Goyal, J. Chen, K. Wimalawarne, S. A. Khan, S. Kaski, H. Mamitsuka, and Y. Chang.
    Convex factorization machine for toxicogenomics prediction. In KDD, pp. 1215--1224, 2017.
+
+8. Z. Pan, E. Chen, Q. Liu, T. Xu, H. Ma, and H. Lin. Sparse factorization machines for click-through rate prediction. In ICDM, pp. 400--409, 2016.
+
+9. J Xu, K Lin, P. Tan, and J. Zhou. Synergies that matter: Efficient interaction selection via sparse factorization machine. In SDM, pp. 1008-–0116, 2016.
+
+10. H. Zhao, Q. Yao, J. Li, Y. Song, and D. L. Lee. Meta-graph based recommendation fusion over heterogeneous information networks. In KDD, pp. 635–-644, 2017
+
+11. K. Atarashi, S. Oyama, and M. Kurihara. Factorization machines with regularization for sparse feature interactions. preprint.
+
+12. A. Beck and M. Teboulle. A fast iterative shrinkage-thresholding algorithm for linear inverse problems. SIAM Journal on Imaging Sciences, 2(1):183-–202, 2009.
+
+13. H. Li and Z. Lin. Accelerated proximal gradient methods for nonconvex programming. In NeurIPS, pp. 379-–387, 2015.
+
+14. Z. Allen-Zhu. Katyusha: The first direct acceleration of stochastic gradient methods. Journal of Machine Learning Research, 18(1):8194–-8244, 2017.
 
 ## Authors
  - Kyohei Atarashi, 2020-present
