@@ -1,9 +1,4 @@
-import factorization_machine,
-       convex_factorization_machine,
-       fm_base, loss, dataset, metrics, tensor,
-       optimizers/optimizers
+import models/models, loss, dataset, metrics, tensor/tensor,
+       optimizers/optimizers, tensor/sparse, regularizers/regularizers
 
-export factorization_machine,
-       convex_factorization_machine,
-       fm_base, loss, dataset, metrics, tensor,
-       optimizers
+export models, loss, dataset, metrics, tensor, optimizers, sparse, regularizers

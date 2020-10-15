@@ -4,7 +4,7 @@ import strutils, sugar, sequtils, math, tables, strformat
 
 
 # The followings are for end users
-proc echoDataInfo(X: BaseDataset) =
+proc echoDataInfo[T](X: BaseDataset[T]) =
   echo("   Number of samples  : ", X.nSamples)
   echo("   Number of features : ", X.nFeatures)
   echo("   Number of non-zeros: ", X.nnz)
@@ -12,8 +12,8 @@ proc echoDataInfo(X: BaseDataset) =
   echo("   Minimum value      : ", X.min)
 
 
-proc eval[L](fm: FactorizationMachine[L], task: TaskKind, test: string,
-             predict: string, nFeatures: int, verbose: int) =
+proc eval(fm: FactorizationMachine, task: TaskKind, test: string,
+          predict: string, nFeatures: int, verbose: int) =
   var X: CSRDataset
   var y: seq[float64]
   if verbose > 0: echo("Load test data.")
@@ -41,30 +41,31 @@ proc trainInner[L](task: TaskKind, train: string, test = "", degree = 2,
                    scheduling = optimal, powerIt = 1.0, dump = "", load = "",
                    predict = "", nFeatures = -1, verbose = 1) =
   ## training a factorization machine
-  var fm: FactorizationMachine[L]
+  var fm: FactorizationMachine
   if load == "":
     fm = newFactorizationMachine(
-      task = task, degree = degree, nComponents = nComponents, alpha0 = alpha0,
-      alpha = alpha, beta = beta, loss = loss, fitLower = fitLower,
+      task = task, degree = degree, nComponents = nComponents, fitLower = fitLower,
       fitIntercept = fitIntercept, fitLinear = fitLinear, warmStart = false,
       randomState = randomState, scale = scale
     )
   else:
-    load(fm, load, true, loss)
+    load(fm, load, true)
   case solver
     of "cd", "als":
       var X: CSCDataset
       var y: seq[float64]
       loadSVMLightFile(train, X, y, nFeatures)
       if verbose > 0: echoDataInfo(X)
-      var optim = newCD(maxIter, verbose, tol)
+      var optim: CD[L] = newCD(maxIter=maxIter, alpha0=alpha0, alpha=alpha, beta=beta,
+                               loss=loss, verbose=verbose, tol=tol)
       optim.fit(X, y, fm)
     of "sgd":
       var X: CSRDataset
       var y: seq[float64]
       loadSVMLightFile(train, X, y, nFeatures)
       if verbose > 0: echoDataInfo(X)
-      var optim = newSGD(eta0, scheduling, powerIt, maxIter, verbose, tol)
+      var optim = newSGD(maxIter, alpha0, alpha, beta, loss, eta0, scheduling, powerIt,
+                         verbose, tol)
       optim.fit(X, y, fm)
     else:
       raise newException(ValueError, "Solver " & solver & " is not supported.")
@@ -105,11 +106,12 @@ proc train(task: TaskKind, train: string, test = "", degree = 2,
   else:
     raise newException(ValueError, fmt"loss {loss} is not supported.")
 
+
 proc testInner[L](task: TaskKind, test, load: string, dump = "", 
                   loss: L = newSquared(), predict = "", nFeatures = -1,
                   verbose = 1) =
-  var fm: FactorizationMachine[L]
-  load(fm, load, false, loss)
+  var fm: FactorizationMachine
+  load(fm, load, false)
   eval(fm, task, test, predict, nFeatures, verbose)
   if dump != "": fm.dump(dump)
 
@@ -156,10 +158,10 @@ Run "$command help" to get *comprehensive* help.$ifVersion"""
      "train": "Filename of training data (libsvm/svmlight format)",
      "test": "Filename of test data (libsvm/svmlight format)",
      "degree": "Degree of the polynomial (order of feature interactions)",
-     "n-components": "Number of basis vectors (rank hyper-parameter)",
-     "alpha0": "Regularization strength for intercept (bias) term",
+     "n-components": "Number of basis vectors (rank hyperparameter)",
+     "alpha0": "Regularization-strength for intercept (bias) term",
      "alpha": "Regularization sterngth for linear term",
-     "beta": "Regularization strength for interaction term",
+     "beta": "Regularization-strength for interaction term",
      "loss": "Optimized loss function, squared, huber, squared_hinge, " &
              "or logistic",
      "fit-lower": "Whether and how to fit lower-order terms. " &
@@ -175,8 +177,8 @@ Run "$command help" to get *comprehensive* help.$ifVersion"""
      "eta0": "Step-size parameter for sgd",
      "scheduling": "Step-size scheduling method for sgd. " &
                    "optimal, constant, pegasos, or invscaling",
-     "power-it": "Hyper-parameter for step-size scheduling",
-     "threshold": "Hyper-parameter for huber loss",
+     "power-it": "Hyperparameter for step-size scheduling",
+     "threshold": "Hyperparameter for huber loss",
      "dump": "Filename for dumping model",
      "load": "Filename for loading model",
      "predict": "Filename for prediction of test data",
