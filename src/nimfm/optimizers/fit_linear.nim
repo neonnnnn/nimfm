@@ -1,7 +1,9 @@
-import ../dataset, ../tensor
+import ../dataset, ../tensor/tensor
+import math
 
-proc fitLinearCD*[L](w: var Vector, X: CSCDataset, y: seq[float64],
-                     yPred: var seq[float64], colNormSq: Vector,
+
+proc fitLinearCD*[L](w: var Vector, X: ColDataset, y: seq[float64],
+                     yPred: var Vector, colNormSq: Vector,
                      alpha: float64, loss: L): float64 =
   result = 0.0
   let nFeatures = X.nFeatures
@@ -24,7 +26,7 @@ proc fitLinearCD*[L](w: var Vector, X: CSCDataset, y: seq[float64],
 
 
 proc fitInterceptCD*[L](intercept: var float64, y: seq[float64],
-                        yPred: var seq[float64], nSamples: int,
+                        yPred: var Vector, nSamples: int,
                         alpha0: float64, loss: L): float64 =
   result = alpha0 * intercept
   for i in 0..<nSamples:
@@ -36,10 +38,20 @@ proc fitInterceptCD*[L](intercept: var float64, y: seq[float64],
   result = abs(result)
 
 
-proc fitLinearSGD*(w: var Vector, X: CSRDataset, alpha, dL, eta: float64,
-                   i: int): float64 =
+proc fitLinearSGD*(w: var Vector, X: RowDataset, i: int,
+                   alpha, dL, eta: float64): float64 =
   result = 0.0
   for (j, val) in X.getRow(i):
     let update = eta * (dL * val + alpha*w[j])
     w[j] -= update
     result += abs(update)
+
+
+proc fitLinearAdaGrad*(w, g_sum_w, g_norms_w: var Vector, X: RowDataset,
+                       i: int, alpha, eta: float64, it: int): float64 =
+  result = 0.0
+  let denom = float(it)*eta*alpha
+  for (j, val) in X.getRow(i):
+    let wj = w[j]
+    w[j] = - eta * g_sum_w[j] / (denom + sqrt(g_norms_w[j]))
+    result += abs(wj - w[j])
