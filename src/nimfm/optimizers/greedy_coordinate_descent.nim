@@ -1,15 +1,17 @@
-import ../dataset, ../tensor, ../kernels, ../extmath
-import ../convex_factorization_machine
-from ../fm_base import checkTarget, checkInitialized
-import fit_linear, optimizer_base
-import sequtils, math, strformat, strutils
+import ../dataset, ../tensor/tensor, ../kernels, ../extmath
+import ../models/convex_factorization_machine
+from ../loss import newSquared
+from ../models/fm_base import checkTarget, checkInitialized
+import fit_linear, optimizer_base, utils
+import sequtils, math, strformat, strutils, sugar
 
 type
-  GreedyCD* = ref object of BaseCSCOptimizer
+  GreedyCD*[L] = ref object of BaseCSCOptimizer
     ## Greedy coordinate descent solver for convex factorization machines.
     ## In this solver, the regularization for P is not 
     ## squared Frobenius norm but the trace norm for interaction weight
     ## matrix (weight matrix for quadratic term).
+    loss*: L
     maxIterInner: int
     maxIterPower: int
     nRefitting: int
@@ -21,13 +23,19 @@ type
     maxIterLineSearch: int
 
 
-proc newGreedyCD*(
-  maxIter = 10, maxIterInner=10, nRefitting=10, refitFully=false,
+proc newGreedyCD*[L](
+  maxIter = 10, alpha0=1e-6, alpha=1e-3, beta=1e-5, loss: L=newSquared(),
+  maxIterInner=10, nRefitting=10, refitFully=false,
   verbose = 1, tol = 1e-7, maxIterPower = 100, tolPower = 1e-7,
   sigma=1e-4, maxIterADMM=100, tolADMM=1e-4,
-  maxIterLineSearch=100): GreedyCD =
+  maxIterLineSearch=100): GreedyCD[L] =
   ## Creates new GreedyCD for ConvexFactorizationMachine.
   ## maxIter: Maximum number of iteration for alternative optimization.
+  ## alpha0: Regularization-strength for intercept.
+  ## alpha: Regularization-strength for linear term.
+  ## beta: Regularization-strength for second-order weights (trace norm).
+  ## loss: Loss function. It must have mu: float64 field and
+  ##       loss/dloss proc: (float64, float64)->float64.
   ## maxIterInner: Maximum number of iteration for optimizing Z (P and lambda).
   ## maxIterPower: Maximum number of iteration for power iteration.
   ## nRefitting: Frequency of the refitting lams and P in inner loop.
@@ -50,8 +58,9 @@ proc newGreedyCD*(
   ##          in fully refitting.
   ## maxIterLineSearch: Maximum number of interation of line seaerch 
   ##                    in fully refitting.
-  result = GreedyCD(
-    maxIter: maxIter, maxIterInner: maxIterInner, nRefitting: nRefitting,
+  result = GreedyCD[L](
+    maxIter: maxIter, alpha0: alpha0, alpha: alpha, beta: beta, loss: loss,
+    maxIterInner: maxIterInner, nRefitting: nRefitting,
     refitFully: refitFully, tol: tol, verbose: verbose,
     maxIterPower: maxIterPower, tolPower: tolPower, sigma: sigma,
     maxIterADMM: maxIterADMM, tolADMM: tolADMM,
@@ -59,7 +68,7 @@ proc newGreedyCD*(
 
 
 proc objectiveADMM[L](y, yPred: Vector, A, B, M: Matrix, rho: float, 
-                      loss: L): float =
+                      loss: L): float64 =
   for i in 0..<len(y):
     result += loss.loss(y[i], yPred[i])
   result += 0.5 * rho * norm(A-B+M, 2)^2
@@ -94,14 +103,14 @@ proc refitDiag[L](y: seq[float64], yPred: var seq[float64], beta: float64,
     if lams[s] != 0.0:
       for i in 0..<nSamples:
         dL[i] = loss.dloss(y[i], yPred[i])
-      var lamOld = lams[s]
+      var old_lam = lams[s]
       fitLams(lams, s, beta, K, dL, loss.mu)
-      yPred -= (lamOld-lams[s]) * K[s]
-
+      yPred -= old_lam * K[s]
+      yPred += lams[s] * K[s]
       if lams[s] != 0: result += 1
 
 
-proc runADMM[L](self: GreedyCD, y: Vector, yPred: var Vector, X: CSCDataset,
+proc runADMM[L](self: GreedyCD, y: Vector, yPred: var Vector, X: ColDataset,
                 beta: float64, loss: L, P, K: Matrix, lams, dL: var Vector,
                 ignoreDiag: bool, A, B, M: var Matrix, 
                 nSamples, nFeatures, nComponents: int): void = 
@@ -257,7 +266,7 @@ proc runADMM[L](self: GreedyCD, y: Vector, yPred: var Vector, X: CSCDataset,
   yPred += yPredQuad
 
 
-proc refitFully[L](self: GreedyCD, y: Vector, yPred: var Vector, X: CSCDataset,
+proc refitFully[L](self: GreedyCD, y: Vector, yPred: var Vector, X: ColDataset,
                    beta: float64, loss: L, P, K, cacheK: var Matrix, 
                    lams, dL: var Vector, ignoreDiag: bool): int = 
   var nComponents = 0
@@ -283,8 +292,8 @@ proc refitFully[L](self: GreedyCD, y: Vector, yPred: var Vector, X: CSCDataset,
   orthogonalize(P, nComponents)
   # recompute Kernels
   for s in 0..<nComponents:
-    if ignoreDiag: anova(X, P, cacheK, 2, s, 0)
-    else: poly(X, P, cacheK, 2, s, 0)
+    if ignoreDiag: anova(X, P, cacheK, 2, s)
+    else: poly(X, P, cacheK, 2, s)
     K[s] = cacheK[0..^1, 2]
     yPred += K[s]
   
@@ -303,16 +312,16 @@ proc refitFully[L](self: GreedyCD, y: Vector, yPred: var Vector, X: CSCDataset,
     yPred -= K[s]
     K[s, 0..^1] = 0.0
   for s in 0..<result:
-    if ignoreDiag: anova(X, P, cacheK, 2, s, 0)
-    else: poly(X, P, cacheK, 2, s, 0)
+    if ignoreDiag: anova(X, P, cacheK, 2, s)
+    else: poly(X, P, cacheK, 2, s)
     K[s] = cacheK[0..^1, 2]
     yPred += K[s] * lams[s]
 
 
-proc fitZ[L](self: GreedyCD, X: CSCDataset, y: seq[float64],
+proc fitZ[L](self: GreedyCD, X: ColDataset, y: seq[float64],
              yPred: var seq[float64], P: var Matrix, lams: var Vector,
              beta: float64, loss: L, cacheK: var Matrix, K: var Matrix,
-             maxComponents, verbose: int, ignoreDiag: bool): float64 =
+             maxComponents, verbose: int, ignoreDiag: bool) =
   var nComponents = 0
   let nSamples = X.nSamples
   let nFeatures = X.nFeatures
@@ -337,7 +346,6 @@ proc fitZ[L](self: GreedyCD, X: CSCDataset, y: seq[float64],
           result[j] -= val*val*dL[i]*p[j]
 
   for it in 0..<self.maxIterInner:
-    result = 0.0
     addBase = false
     # Add a new vector to basis (dominate eigenvector)
     if nComponents < maxComponents:
@@ -358,8 +366,9 @@ proc fitZ[L](self: GreedyCD, X: CSCDataset, y: seq[float64],
         P.addRow(p)
       else: # Re-use
         P[sNew] = p
-      if ignoreDiag: anova(X, P, cacheK, 2, sNew, 0)
-      else: poly(X, P, cacheK, 2, sNew, 0)
+      # Compute kernel
+      if ignoreDiag: anova(X, P, cacheK, 2, sNew)
+      else: poly(X, P, cacheK, 2, sNew)
       cache = cacheK[0..^1, 2]
       if sNew == len(K): # Add new row
         K.addRow(cache)
@@ -383,39 +392,39 @@ proc fitZ[L](self: GreedyCD, X: CSCDataset, y: seq[float64],
     # if basis is changed or refitted
     if addBase or (it+1) mod self.nRefitting == 0 or it == self.maxIterInner-1:
       # compute objective for stopping criterion
-      result += norm(lams, 1)
-      result *= beta / float(nSamples)
+      var lossNew = norm(lams, 1) * beta
       for i in 0..<nSamples:
-        result += loss.loss(y[i], yPred[i])
-      result /= float(nSamples)
+        lossNew += loss.loss(y[i], yPred[i])
+      lossNew /= float(nSamples)
       
       if verbose > 1:
         let iterAligned =  align($(it+1), len($self.maxIterInner))
         stdout.write(fmt"   Iteration: {iterAligned}")
-        stdout.write(fmt"   Objective: {result:1.4e}")
-        stdout.write(fmt"   Decreasing: {lossOld - result:1.4e}")
+        stdout.write(fmt"   Objective: {lossNew:1.4e}")
+        stdout.write(fmt"   Decreasing: {lossOld - lossNew:1.4e}")
         stdout.write("\n")
         stdout.flushFile()
 
       # Stopping criterion
-      if abs(result - lossOld) < self.tol:
+      if abs(lossNew - lossOld) < self.tol:
         if verbose > 1:
           echo("   Converged at iteration ", it+1, ".")
         break
-      lossOld = result
+      lossOld = lossNew
   
 
-proc fit*[L](self: GreedyCD, X: CSCDataset, y: seq[float64],
-             cfm: var ConvexFactorizationMachine[L]) =
+proc fit*[L](self: GreedyCD[L], X: ColDataset, y: seq[float64],
+             cfm: ConvexFactorizationMachine,
+             callback: (GreedyCD[L], ConvexFactorizationMachine)->void=nil) =
   ## Fits the factorization machine on X and y by coordinate descent.
   cfm.init(X)
   let y = checkTarget(cfm, y)
   let
     nSamples = X.nSamples
     maxComponents = cfm.maxComponents
-    alpha0 = cfm.alpha0 * float(nSamples)
-    alpha = cfm.alpha * float(nSamples)
-    beta = cfm.beta * float(nSamples)
+    alpha0 = self.alpha0 * float(nSamples)
+    alpha = self.alpha * float(nSamples)
+    beta = self.beta * float(nSamples)
     fitLinear = cfm.fitLinear
     fitIntercept = cfm.fitIntercept
 
@@ -426,9 +435,8 @@ proc fit*[L](self: GreedyCD, X: CSCDataset, y: seq[float64],
     K: Matrix = zeros([len(cfm.lams), nSamples])
     colNormSq: Vector
     isConverged = false
-    lossOld = 0.0
-    lossNew = 0.0
-  
+    lossOld, lossNew, regOld, regNew: float64
+
   # init caches
   cacheK[0..^1, 0] = 1.0
   if fitLinear:
@@ -439,49 +447,54 @@ proc fit*[L](self: GreedyCD, X: CSCDataset, y: seq[float64],
   linear(X, cfm.w, yPred)
   yPred += cfm.intercept
   for s in 0..<len(cfm.lams):
-    if cfm.ignoreDiag: anova(X, cfm.P, cacheK, 2, s, 0)
-    else: poly(X, cfm.P, cacheK, 2, s, 0)
+    if cfm.ignoreDiag: anova(X, cfm.P, cacheK, 2, s)
+    else: poly(X, cfm.P, cacheK, 2, s)
     K[s] = cacheK[0..^1, 2]
     yPred += cfm.lams[s] * K[s]
   
   # compute loss
-  for i in 0..<nSamples:
-    lossOld += cfm.loss.loss(y[i], yPred[i])
-  if fitLinear:
-    lossOld += alpha * norm(cfm.w, 2)^2
-  if fitIntercept:
-    lossOld += alpha0 * cfm.intercept^2
-  lossOld /= float(nSamples)
+  (lossOld, regOld) = objective(y, yPred, cfm.P, cfm.w, cfm.intercept,
+                                self.alpha0, self.alpha, 0, self.loss)
+  regOld += self.beta * norm(cfm.lams, 1) # trace norm
 
   # start iteration
   for it in 0..<self.maxIter:
-    lossNew = 0.0
     if self.verbose > 0:
       echo(fmt"Outer Iteration {it+1}")
     
     if fitIntercept:
       discard fitInterceptCD(cfm.intercept, y, yPred, nSamples, alpha0, 
-                             cfm.loss)
-      lossNew += alpha0 * cfm.intercept^2
+                             self.loss)
     
     if fitLinear:
-      discard fitLinearCD(cfm.w, X, y, yPred, colNormSq, alpha, cfm.loss)
-      lossNew += alpha * norm(cfm.w, 2)^2
+      discard fitLinearCD(cfm.w, X, y, yPred, colNormSq, alpha, self.loss)
 
-    lossNew /= float(nSamples)
-
-    lossNew += fitZ(self, X, y, yPred, cfm.P, cfm.lams, beta, cfm.loss, cacheK,
-                    K, maxComponents, self.verbose, cfm.ignoreDiag)
+    fitZ(self, X, y, yPred, cfm.P, cfm.lams, beta, self.loss, cacheK,
+         K, maxComponents, self.verbose, cfm.ignoreDiag)
     
+    (lossNew, regNew) = objective(y, yPred, cfm.P, cfm.w, cfm.intercept,
+                                  self.alpha0, self.alpha, 0, self.loss)
+    regNew += self.beta * norm(cfm.lams, 1)
+    
+    if not callback.isNil:
+      callback(self, cfm)
     if self.verbose > 0:
-      stdout.write(fmt"   Whole Objective: {lossNew:1.4e}")
+      stdout.write(fmt"   Whole Objective: {lossNew+regNew:1.4e}")
       stdout.write("\n")
-    if abs(lossNew - lossOld) < self.tol:
+    if abs(lossNew + regNew - lossOld - regNew) < self.tol:
       if self.verbose > 0:
         echo("Converged at iteration ", it+1, ".")
       isConverged = true
       break
     lossOld = lossNew
+    regOld = regNew
+
+    # Re-compute predictons for next iter (in O(nnz(X)k))
+    if it < self.maxIter - 1:
+      linear(X, cfm.w, yPred)
+      yPred += cfm.intercept
+      for s in 0..<len(cfm.lams):
+        yPred += cfm.lams[s] * K[s]
 
   if not isConverged and self.verbose > 0:
     echo("Objective did not converge. Increase maxIter.")
