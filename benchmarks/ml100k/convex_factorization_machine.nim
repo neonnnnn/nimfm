@@ -9,17 +9,23 @@ when isMainModule:
                     XTe, yTe, nFeatures=2625)
 
   var cfm = newConvexFactorizationMachine(
-    task=regression, beta=1e-4, alpha0=1e-8, alpha=1e-8,
-    maxComponents=50, ignoreDiag=true, fitLinear=true,
-    fitIntercept=true, eta=600, warmStart=true)
+    task=regression, maxComponents=50, ignoreDiag=true, fitLinear=true,
+    fitIntercept=true, warmStart=false)
 
   var gcd = newGreedyCD(
-    maxIter=10, maxIterInner=10, maxIterPower=100,
-    refitFully=false, nRefitting=100, verbose=1)
-
-  var hazan = newHazan(maxIter=100, maxIterPower=100, optimal=true, verbose=1,
-                       nTol=100)
-  #hazan.fit(Xtr, yTr, cfm)
+    maxIter=30, maxIterInner=10, maxIterPower=100,
+    beta=1e-4, alpha0=1e-8, alpha=1e-8,
+    refitFully=false, nRefitting=10, verbose=1)
+  echo("Training CFM by GreedyCD.")
   gcd.fit(Xtr, yTr, cfm)
+  echo("Train RMSE: ", cfm.score(Xtr, yTr))
+  echo("Test RMSE: ", cfm.score(Xte, yTe))
+  echo()
+
+  var hazan = newHazan(
+    maxIter=100, maxIterPower=100, optimal=true, verbose=1,
+    eta=600, nTol=100)
+  echo("Training CFM by Hazan's Algorothm.")
+  hazan.fit(Xtr, yTr, cfm)
   echo("Train RMSE: ", cfm.score(Xtr, yTr))
   echo("Test RMSE: ", cfm.score(Xte, yTe))

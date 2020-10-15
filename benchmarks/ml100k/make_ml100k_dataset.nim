@@ -32,7 +32,7 @@ proc createUserItemDataset(indices: openarray[int]) =
   dumpSVMLightFile("ml-100k_user_item_test.svm", XTe, yTe)
 
 
-proc createUserFeatureMatrix(): CSCDataset = 
+proc createUserFeatureMatrix(): CSRDataset = 
   var
     ages: array[nUsers, int]
     genders: array[nUsers, string]
@@ -81,10 +81,10 @@ proc createUserFeatureMatrix(): CSCDataset =
     offset += len(occupationEncoder.classes)
     XUser[i][zipcodesEnc[j-1]+offset] = 1.0
     i += 1
-  result = toCSC(XUser)
+  result = toCSRDataset(XUser)
  
 
-proc createItemFeatureMatrix(): CSCDataset = 
+proc createItemFeatureMatrix(): CSRDataset  = 
   var i = 0
   var years = newSeqWith(nItems, 0)
   for line in "ml-100k/u.item".lines:
@@ -123,12 +123,12 @@ proc createItemFeatureMatrix(): CSCDataset =
     for jj, val in Genres[item-1]:
       XItems[i][jj+len(yearEncoder.classes)] = val
     i += 1
-  result = toCSC(XItems)
+  result = toCSRDataset(XItems)
 
 
 proc createUserItemFeatureDataset(indices: openarray[int]) =
   var
-    X: CSCDataset
+    X: CSRDataset
     y: seq[float64]
     XTr, XTe: CSRDataset
     yTr, yTe: seq[float64]
@@ -142,14 +142,14 @@ proc createUserItemFeatureDataset(indices: openarray[int]) =
   let XItem = createItemFeatureMatrix()
   echo("  Done.")
   
-  let XAll = toCSR(hstack([X, XUser, XItem]))
+  let XAll = hstack(X, XUser, XItem)
   let nTrain = int(8*X.nSamples/10)
   (XTr, yTr) = shuffle(XAll, y, indices[0..<nTrain])
   (XTe, yTe) = shuffle(XAll, y, indices[nTrain..^1])
   dumpSVMLightFile("ml-100k_user_item_feature_all.svm", XAll, y)
   dumpSVMLightFile("ml-100k_user_item_feature_train.svm", Xtr, yTr)
   dumpSVMLightFile("ml-100k_user_item_feature_test.svm", Xte, yTe)
-  
+
 
 when isMainModule:
   var client = newHttpClient()
