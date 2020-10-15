@@ -1,12 +1,14 @@
 import unittest
-import utils, optimizers/sgd_slow
+import utils, optimizers/psgd_slow
 import nimfm/loss, nimfm/dataset, nimfm/tensor/tensor
 import nimfm/models/factorization_machine, nimfm/models/fm_base
-import nimfm/optimizers/sgd
+import nimfm/optimizers/psgd
 import models/fm_slow
+import nimfm/regularizers/regularizers
+import regularizers/l21_slow
 
 
-suite "Test stochastic gradient descent":
+suite "Test proximal stochastic gradient descent for L21":
   let
     n = 80
     d = 8
@@ -20,6 +22,8 @@ suite "Test stochastic gradient descent":
           var
             X: CSRDataset
             y: seq[float64]
+            reg = newL21()
+
           createFMDataset(X, y, n, d, degree, nComponents, 42,
                           fitLower, false, fitIntercept)
 
@@ -28,7 +32,7 @@ suite "Test stochastic gradient descent":
             task = regression, degree = degree, nComponents = nComponents,
             fitLower = fitLower, fitLinear = false,
             fitIntercept = fitIntercept, randomState = 1)
-          var sgd = newSGD(maxIter = 10, verbose = 0, tol = 0)
+          var sgd = newPSGD(maxIter = 10, verbose = 0, tol = 0, reg = reg)
           sgd.fit(X, y, fm)
           for j in 0..<d:
             check fm.w[j] == 0.0
@@ -41,6 +45,7 @@ suite "Test stochastic gradient descent":
           var
             X: CSRDataset
             y: seq[float64]
+            reg = newL21()
           createFMDataset(X, y, n, d, degree, nComponents, 42,
                           fitLower, fitLinear, false)
           # fit fast version
@@ -48,8 +53,8 @@ suite "Test stochastic gradient descent":
             task = regression, degree = degree, nComponents = nComponents,
             fitLower = fitLower, fitLinear = fitLinear,
             fitIntercept = false, randomState = 1)
-          var sgd = newSGD(
-            maxIter = 10, verbose = 0, tol = 0
+          var sgd = newPSGD(
+            maxIter = 10, verbose = 0, tol = 0, reg=reg
           )
           sgd.fit(X, y, fm)
           check fm.intercept == 0.0
@@ -63,14 +68,16 @@ suite "Test stochastic gradient descent":
             var
               X: CSRDataset
               y: seq[float64]
+              reg = newL21()
             createFMDataset(X, y, n, d, degree, nComponents, 42,
                             fitLower, fitLinear, fitIntercept)
             var fmWarm = newFactorizationMachine(
               task = regression, degree = degree, nComponents = nComponents,
               fitLower = fitLower, fitLinear = fitLinear, warmStart = true,
               fitIntercept = fitIntercept, randomState = 1)
-            var sgdWarm = newSGD(
-              maxIter = 1, verbose = 0, tol = 0, shuffle = false
+            var sgdWarm = newPSGD(
+              maxIter = 1, verbose = 0, tol = 0, shuffle = false,
+              reg=reg
             )
             for i in 0..<10:
               sgdWarm.fit(X, y, fmWarm)
@@ -79,8 +86,8 @@ suite "Test stochastic gradient descent":
               fitLower = fitLower, fitLinear = fitLinear, 
               fitIntercept = fitIntercept, randomState = 1)
 
-            var sgd = newSGD(
-              maxIter = 10, verbose = 0, tol = 0, shuffle = false
+            var sgd = newPSGD(
+              maxIter = 10, verbose = 0, tol = 0, shuffle = false, reg=reg
             )
             sgd.fit(X, y, fm)
 
@@ -98,6 +105,8 @@ suite "Test stochastic gradient descent":
               X: CSRDataset
               y: seq[float64]
               XMat = zeros([n, d])
+              reg = newL21()
+              regSlow = newL21Slow()
             createFMDataset(X, y, n, d, degree, nComponents, 42,
                             fitLower, fitLinear, fitIntercept,
                             threshold=0.3)
@@ -109,7 +118,7 @@ suite "Test stochastic gradient descent":
               task = regression, degree = degree, nComponents = nComponents,
               fitLower = fitLower, fitLinear = fitLinear,
               fitIntercept = fitIntercept, randomState = 1)
-            var sgdSlow = newSGDSlow(maxIter = 5, tol = 0)
+            var sgdSlow = newPSGDSlow(maxIter = 5, tol = 0, reg=regSlow)
             sgdSlow.fit(XMat, y, fmSlow)
 
             # fit fast version
@@ -117,13 +126,13 @@ suite "Test stochastic gradient descent":
               task = regression, degree = degree, nComponents = nComponents,
               fitLower = fitLower, fitLinear = fitLinear,
               fitIntercept = fitIntercept, randomState = 1)
-            var sgd = newSGD(
-              maxIter = 5, verbose = 0, tol = 0
+            var sgd = newPSGD(
+              maxIter = 5, verbose = 0, tol = 0, reg=reg
             )
             sgd.fit(X, y, fm)
             check abs(fm.intercept-fmSlow.intercept) < 1e-7
             checkAlmostEqual(fm.w, fmSlow.w)
-            checkAlmostEqual(fm.P, fmSlow.P)
+            checkAlmostEqual(fm.P, fmSlow.P, rtol=1e-7, atol=1e-7)
 
 
   test "Test score":
@@ -134,6 +143,7 @@ suite "Test stochastic gradient descent":
             var
               X: CSRDataset
               y: seq[float64]
+              reg = newL21()
             createFMDataset(X, y, n, d, degree, nComponents, 42,
                             fitLower, fitLinear, fitIntercept)
 
@@ -141,9 +151,10 @@ suite "Test stochastic gradient descent":
               task = regression, degree = degree, nComponents = nComponents,
               fitLower = fitLower, fitLinear = fitLinear,
               fitIntercept = fitIntercept, randomState = 1)
-            var sgd = newSGD(
+            var sgd = newPSGD(
               maxIter = 20, verbose = 0, tol = 0,
-              alpha0 = 1e-9, alpha = 1e-9, beta = 1e-9,
+              alpha0 = 1e-9, alpha = 1e-9, beta = 1e-9, gamma=1e-9,
+              reg=reg
             )
             fm.init(X)
             let scoreBefore = fm.score(X, y)
@@ -159,6 +170,7 @@ suite "Test stochastic gradient descent":
             var
               X: CSRDataset
               y: seq[float64]
+              reg = newL21()
             createFMDataset(X, y, n, d, degree, nComponents, 42,
                             fitLower, fitLinear, fitIntercept,
                             scale=1.0)
@@ -167,9 +179,10 @@ suite "Test stochastic gradient descent":
               task = regression, degree = degree, nComponents = nComponents,
               fitLower = fitLower, fitLinear = fitLinear, warmStart = false,
               fitIntercept = fitIntercept, randomState = 1)
-            var sgd = newSGD(
+            var sgd = newPSGD(
               maxIter = 200, verbose = 0, tol = 0,
-              alpha0 = 1e-9, alpha = 1e-9, beta = 1e-9,
+              alpha0 = 1e-9, alpha = 1e-9, beta = 1e-9, gamma=1e-9,
+              reg=reg
             )
             sgd.fit(X, y, fmWeakReg)
             
@@ -177,9 +190,10 @@ suite "Test stochastic gradient descent":
               task = regression, degree = degree, nComponents = nComponents,
               fitLower = fitLower, fitLinear = fitLinear, warmStart = false,
               fitIntercept = fitIntercept, randomState = 1)
-            var sgdStrong = newSGD(
+            var sgdStrong = newPSGD(
               maxIter = 200, verbose = 0, tol = 0,
-              alpha0 = 1000000, alpha = 1000000, beta = 1000000,
+              alpha0 = 1000000, alpha = 1000000, beta = 1000000, gamma=1000000,
+              reg=reg
             )
             sgdStrong.fit(X, y, fmStrongReg)
 

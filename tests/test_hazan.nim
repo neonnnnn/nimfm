@@ -1,8 +1,8 @@
 import unittest
-import utils, hazan_slow, cfm_slow
-import nimfm/loss, nimfm/dataset, nimfm/tensor
-import nimfm/convex_factorization_machine, nimfm/fm_base
-from nimfm/factorization_machine import FitLowerKind
+import utils, optimizers/hazan_slow, models/cfm_slow
+import nimfm/dataset, nimfm/tensor/tensor
+import nimfm/models/convex_factorization_machine, nimfm/models/fm_base
+from nimfm/models/factorization_machine import FitLowerKind
 import nimfm/optimizers/hazan
 import random
 
@@ -12,7 +12,6 @@ suite "Test hazan":
     n = 50
     d = 6
     maxComponents = 6
-
 
   test "Test fitLinear":
     for optimal in [true, false]:
@@ -57,7 +56,7 @@ suite "Test hazan":
 
   test "Test warmStart":
     for optimal in [true, false]:
-      for ignoreDiag in [true]:
+      for ignoreDiag in [true, false]:
         for fitLinear in [true, false]:
           for fitIntercept in [true, false]:
             var
@@ -87,21 +86,19 @@ suite "Test hazan":
             )
             hazan.fit(X, y, cfm)
             check abs(cfm.intercept-cfmWarm.intercept) < 1e-5
-            checkAlmostEqual(cfm.w, cfmWarm.w, atol = 1e-5)
-            checkAlmostEqual(cfm.lams, cfmWarm.lams, atol = 1e-5)
-
+            checkAlmostEqual(cfm.w, cfmWarm.w)
+            checkAlmostEqual(cfm.lams, cfmWarm.lams)
 
   # Too slow!
   test "Comparison to naive implementation":
     for optimal in [true, false]:
       for ignoreDiag in [true, false]:
-        for fitLinear in [false, false]:
-          for fitIntercept in [false, false]:
+        for fitLinear in [true, false]:
+          for fitIntercept in [true, false]:
             var
               X: CSCDataset
               y: seq[float64]
               XMat = zeros([n, d])
-
             createFMDataset(X, y, n, d, 2, maxComponents div 2, 42,
                             explicit, fitLinear, fitIntercept,
                             threshold=0.3)
@@ -118,7 +115,6 @@ suite "Test hazan":
               maxIter = 50, tol = 0, maxIterPower=1000, tolPower=0.0,
               optimal=optimal)
             hazanSlow.fit(XMat, y, cfmSlow)
-
             # fit fast version
             randomize(1)
             var cfm = newConvexFactorizationMachine(
@@ -130,35 +126,37 @@ suite "Test hazan":
               maxIter = 50, verbose = 0, tol = 0, tolPower=0.0,
               maxIterPower=1000, optimal = optimal)
             hazan.fit(X, y, cfm)
-
+            
             check abs(cfm.intercept-cfmSlow.intercept) < 1e-5
-            checkAlmostEqual(cfm.w, cfmSlow.w, atol=1e-5)
-            checkAlmostEqual(cfm.lams, cfmSlow.lams, atol=1e-5)
-            checkAlmostEqual(cfm.P, cfm.P, atol=1e-5)
+            checkAlmostEqual(cfm.w, cfmSlow.w)
+            checkAlmostEqual(cfm.lams, cfmSlow.lams, atol=1e-7)
+            checkAlmostEqual(cfm.P, cfmSlow.P)
 
 
   test "Test score":
-    for optimal in [true]:
-      for fitLinear in [true, false]:
-        for fitIntercept in [true]:
-          var
-            X: CSCDataset
-            y: seq[float64]
-          createFMDataset(X, y, n, d, 2, maxComponents div 2, 42,
-                          explicit, fitLinear, fitIntercept)
+    for optimal in [true, false]:
+      for ignoreDiag in [true, false]:
+        for fitLinear in [true, false]:
+          for fitIntercept in [true, false]:
+            var
+              X: CSCDataset
+              y: seq[float64]
+            createFMDataset(X, y, n, d, 2, maxComponents div 2, 42,
+                            explicit, fitLinear, fitIntercept)
 
-          var cfm = newConvexFactorizationMachine(
-            task = regression, maxComponents = 1000,
-            fitLinear = fitLinear, eta=10, fitIntercept = fitIntercept,
-            ignoreDiag=true)
-          var hazan = newHazan(
-            maxIter = 100, ntol=10, verbose = 0, tol = 0, optimal=optimal,
-            maxIterPower=100
-          )
-          init(cfm, X)
-          let scoreBefore = cfm.score(X, y)
-          hazan.fit(X, y, cfm)
-          check cfm.score(X, y) < scoreBefore
+            var cfm = newConvexFactorizationMachine(
+              task = regression, maxComponents = maxComponents,
+              fitLinear = fitLinear, fitIntercept = fitIntercept,
+              ignoreDiag = ignoreDiag)
+
+            var hazan = newHazan(
+              maxIter = 100, verbose = 0, tol = 0, tolPower=0.0,
+              maxIterPower=1000, optimal = optimal, eta=0.1)
+
+            init(cfm, X)
+            let scoreBefore = cfm.score(X, y)
+            hazan.fit(X, y, cfm)
+            check cfm.score(X, y) < scoreBefore + 1e-9
 
 
   test "Test regularization":
@@ -171,22 +169,22 @@ suite "Test hazan":
               y: seq[float64]
             createFMDataset(X, y, n, d, 2, maxComponents div 2, 42,
                             explicit, fitLinear, fitIntercept,
-                            scale=1.0)
+                            scale=3.0)
 
             var cfmWeakReg = newConvexFactorizationMachine(
               task = regression, maxComponents = maxComponents,
               fitLinear = fitLinear, warmStart = true, ignoreDiag=ignoreDiag,
-              fitIntercept = fitIntercept, eta=1000)
+              fitIntercept = fitIntercept)
             var hazan = newHazan(
-              maxIter = 100, verbose = 0, tol = -100, optimal=optimal,
-            )
+              maxIter = 100, verbose = 0, tol = -100, optimal=optimal, eta=1000)
             hazan.fit(X, y, cfmWeakReg)
             
             var cfmStrongReg = newConvexFactorizationMachine(
               task = regression, maxComponents = maxComponents,
               fitLinear = fitLinear, warmStart = true,
-              fitIntercept = fitIntercept, ignoreDiag=ignoreDiag,
-              eta=0.1)
-            hazan.fit(X, y, cfmStrongReg)
+              fitIntercept = fitIntercept, ignoreDiag=ignoreDiag)
+            var hazanStrong = newHazan(
+              maxIter = 100, verbose = 0, tol = -100, optimal=optimal, eta=0.01)
+            hazanStrong.fit(X, y, cfmStrongReg)
 
             check norm(cfmWeakReg.lams, 1) >= norm(cfmStrongReg.lams, 1)

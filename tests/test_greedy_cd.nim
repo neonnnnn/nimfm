@@ -1,8 +1,8 @@
 import unittest
-import utils, greedy_cd_slow, cfm_slow
-import nimfm/loss, nimfm/dataset, nimfm/tensor
-import nimfm/convex_factorization_machine, nimfm/fm_base
-from nimfm/factorization_machine import FitLowerKind
+import utils, optimizers/greedy_cd_slow, models/cfm_slow
+import nimfm/loss, nimfm/dataset, nimfm/tensor/tensor
+import nimfm/models/convex_factorization_machine, nimfm/models/fm_base
+from nimfm/models/factorization_machine import FitLowerKind
 import nimfm/optimizers/greedy_coordinate_descent
 import random
 
@@ -73,7 +73,6 @@ suite "Test greedy coordinate descent":
             )
             for i in 0..<10:
               gcdWarm.fit(X, y, cfmWarm)
-
             randomize(1)
             var cfm = newConvexFactorizationMachine(
               task = regression, maxComponents = maxComponents,
@@ -85,8 +84,8 @@ suite "Test greedy coordinate descent":
             )
             gcd.fit(X, y, cfm)
             check abs(cfm.intercept-cfmWarm.intercept) < 1e-5
-            checkAlmostEqual(cfm.w, cfmWarm.w, atol = 1e-5)
-            checkAlmostEqual(cfm.lams, cfmWarm.lams, atol = 1e-5)
+            checkAlmostEqual(cfm.w, cfmWarm.w)
+            checkAlmostEqual(cfm.lams, cfmWarm.lams)
   
 
   # Too slow!
@@ -132,7 +131,7 @@ suite "Test greedy coordinate descent":
 
             check abs(cfm.intercept-cfmSlow.intercept) < 1e-5
             checkAlmostEqual(cfm.w, cfmSlow.w, atol=1e-5)
-            checkAlmostEqual(cfm.lams, cfmSlow.lams, atol=1e-5)
+            checkAlmostEqual(cfm.lams, cfmSlow.lams, rtol=1e-5)
             checkAlmostEqual(cfm.P, cfm.P, atol=1e-5)
 
 
@@ -149,11 +148,11 @@ suite "Test greedy coordinate descent":
 
             var cfm = newConvexFactorizationMachine(
               task = regression, maxComponents = maxComponents,
-              fitLinear = fitLinear, alpha0 = 1e-9,
-              alpha = 1e-9, beta = 1e-9, fitIntercept = fitIntercept,
+              fitLinear = fitLinear, fitIntercept = fitIntercept,
               ignoreDiag=ignoreDiag)
             var gcd = newGreedyCD(
-              maxIter = 20, verbose = 0, tol = 0, refitFully=refitFully
+              maxIter = 20, verbose = 0, tol = 0, refitFully=refitFully,
+              alpha0 = 1e-9, alpha = 1e-9, beta = 1e-9, 
             )
             init(cfm, X)
             let scoreBefore = cfm.score(X, y)
@@ -175,20 +174,24 @@ suite "Test greedy coordinate descent":
 
             var cfmWeakReg = newConvexFactorizationMachine(
               task = regression, maxComponents = maxComponents,
-              fitLinear = fitLinear, warmStart = true, ignoreDiag=ignoreDiag,
-              fitIntercept = fitIntercept, alpha0 = 0, alpha = 0, beta = 0)
-            var gcd = newGreedyCD(
-              maxIter = 100, verbose = 0, tol = 0, refitFully=refitFully
+              fitLinear = fitLinear, ignoreDiag=ignoreDiag,
+              fitIntercept = fitIntercept)
+            var gcdWeakReg = newGreedyCD(
+              maxIter = 100, verbose = 0, tol = 0, refitFully=refitFully,
+              alpha0 = 1e-5, alpha = 1e-5, beta = 1e-6
             )
-            gcd.fit(X, y, cfmWeakReg)
+            gcdWeakReg.fit(X, y, cfmWeakReg)
             
             var cfmStrongReg = newConvexFactorizationMachine(
               task = regression, maxComponents = maxComponents,
-              fitLinear = fitLinear, warmStart = true,
-              fitIntercept = fitIntercept, ignoreDiag=ignoreDiag,
-              alpha0 = 1000, alpha = 1000, beta = 1000)
-            gcd.fit(X, y, cfmStrongReg)
+              fitLinear = fitLinear, fitIntercept = fitIntercept,
+              ignoreDiag=ignoreDiag)
+            var gcdStrong = newGreedyCD(
+              maxIter = 100, verbose = 0, tol = 0, refitFully=refitFully,
+              alpha0 = 10000000, alpha = 10000000, beta = 100000000
+            )
 
+            gcdStrong.fit(X, y, cfmStrongReg)
             check cfmWeakReg.score(X, y) < cfmStrongReg.score(X, y)
             check abs(cfmWeakReg.intercept) >= abs(cfmStrongReg.intercept)
             check norm(cfmWeakReg.w, 2) >= norm(cfmStrongReg.w, 2)
