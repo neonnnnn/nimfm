@@ -1,14 +1,16 @@
-import nimfm/tensor, nimfm/optimizers/optimizer_base
-from nimfm/fm_base import checkTarget, checkInitialized
+import nimfm/tensor/tensor, nimfm/optimizers/optimizer_base
+from nimfm/models/fm_base import checkTarget, checkInitialized
+from nimfm/loss import newSquared
 import sequtils, math
-import fit_linear_slow, cfm_slow, kernels_slow
+import fit_linear_slow, ../models/cfm_slow, ../kernels_slow
 
 type
-  GCDSlow* = ref object of BaseCSCOptimizer
+  GCDSlow*[L] = ref object of BaseCSCOptimizer
     ## Greedy coordinate descent solver for convex factorization machines.
     ## In this solver, the regularization for interaction is not 
     ## squared Frobenius norm for P but the trace norm for interaction weight
     ## matrix.
+    loss: L
     maxIterInner: int
     maxIterPower: int
     nRefitting: int
@@ -39,12 +41,14 @@ proc predict(P: Matrix, w, lams: Vector, intercept: float64, X: Matrix,
         yPred[i] += lams[s] * K[s, i]
 
 
-proc newGCDSlow*(
-  maxIter = 100, maxIterInner=10, nRefitting=10, refitFully=false,
+proc newGCDSlow*[L](
+  maxIter = 100, alpha0=1e-6, alpha=1e-3, beta=1e-5,
+  loss:L = newSquared(), maxIterInner=10, nRefitting=10, refitFully=false,
   verbose = 2, tol = 1e-7, maxIterPower = 200, tolPower = 1e-7,
-  sigma=1e-4, maxIterADMM=100, tolADMM=1e-4, maxIterLineSearch=100): GCDSlow =
-  result = GCDSlow(
-    maxIter: maxIter, maxIterInner: maxIterInner, nRefitting: nRefitting,
+  sigma=1e-4, maxIterADMM=100, tolADMM=1e-4, maxIterLineSearch=100): GCDSlow[L] =
+  result = GCDSlow[L](
+    maxIter: maxIter, alpha0: alpha0, alpha: alpha, beta:beta,
+    loss: loss, maxIterInner: maxIterInner, nRefitting: nRefitting,
     refitFully: refitFully, tol: tol, verbose: verbose,
     maxIterPower: maxIterPower, tolPower: tolPower, sigma: sigma,
     maxIterADMM: maxIterADMM, tolADMM: tolADMM, 
@@ -125,7 +129,7 @@ proc refitFully[L](self: GCDSlow, X: Matrix, y: seq[float64],
   # compute predictions
   yPred = sum(matmul(AP, X.T) * PXT, axis=0)
   if ignorediag:
-    yPred -= mvmul(X*X, sum(P*AP, axis=0))
+    yPred -= mvmul(X*X, sum(P[0..<nComponents]*AP, axis=0))
     yPred *= 0.5
   yPred += mvmul(X, w)
   yPred += intercept
@@ -325,8 +329,8 @@ proc fitZ[L](self: GCDSlow, X: Matrix, y: seq[float64],
       objOld = result
   
 
-proc fit*[L](self: GCDSlow, X: Matrix, y: seq[float64],
-          cfm: var CFMSlow[L]) =
+proc fit*[L](self: GCDSlow[L], X: Matrix, y: seq[float64],
+             cfm: var CFMSlow) =
   ## Fits the factorization machine on X and y by coordinate descent.
   cfm.init(X)
   let y = checkTarget(cfm, y)
@@ -334,12 +338,12 @@ proc fit*[L](self: GCDSlow, X: Matrix, y: seq[float64],
     nSamples = X.shape[0]
     nFeatures = X.shape[1]
     maxComponents = cfm.maxComponents
-    alpha0 = cfm.alpha0 * float(nSamples)
-    alpha = cfm.alpha * float(nSamples)
-    beta = cfm.beta * float(nSamples)
+    alpha0 = self.alpha0 * float(nSamples)
+    alpha = self.alpha * float(nSamples)
+    beta = self.beta * float(nSamples)
     fitLinear = cfm.fitLinear
     fitIntercept = cfm.fitIntercept
-    loss = cfm.loss
+    loss = self.loss
 
   # caches
   var

@@ -1,7 +1,6 @@
-import nimfm/tensor, nimfm/optimizers/optimizer_base, nimfm/loss, nimfm/utils
-from nimfm/fm_base import checkTarget, checkInitialized
-import math, strformat, strutils
-import cfm_slow, kernels_slow
+import nimfm/tensor/tensor, nimfm/optimizers/optimizer_base, nimfm/utils
+from nimfm/models/fm_base import checkTarget, checkInitialized
+import math, ../models/cfm_slow, ../kernels_slow
 
 type
   HazanSlow* = ref object of BaseCSCOptimizer
@@ -12,6 +11,7 @@ type
     ## This solver solves not regularized problem but constrained problem.
     ## Regularization parameters alpha0, alpha, and beta
     ## in ConvexFactorizationMachine are ignored.
+    eta: float64
     maxIterPower: int
     tolPower: float64
     optimal: bool
@@ -20,10 +20,10 @@ type
 
 
 proc newHazanSlow*(
-  maxIter = 100, verbose = 2, tol = 1e-7, nTol=10, maxIterPower = 1000,
-  tolPower = 1e-7, optimal = true): HazanSlow =
+  maxIter = 100, eta=1000.0, verbose = 2, tol = 1e-7, nTol=10, 
+  maxIterPower = 1000, tolPower = 1e-7, optimal = true): HazanSlow =
   result = HazanSlow(
-    maxIter: maxIter, tol: tol, nTol: nTol, verbose: verbose,
+    maxIter: maxIter, eta: eta, tol: tol, nTol: nTol, verbose: verbose,
     maxIterPower: maxIterPower, tolPower: tolPower, optimal: optimal)
 
 
@@ -34,7 +34,8 @@ proc predict(yPredQuad, yPredLinear: var Vector, K: var Matrix,
   let nFeatures = X.shape[1]
   mvmul(X, w, yPredLinear)
   yPredLinear += intercept
-  for s in 0..<len(lams):
+  yPredQuad[0..^1] = 0.0
+  for s in 0..<len(K):
     for i in 0..<nSamples:
       if ignoreDiag: 
         K[s, i] = anovaSlow(X, P, i, 2, s, nFeatures, 0)
@@ -44,7 +45,7 @@ proc predict(yPredQuad, yPredLinear: var Vector, K: var Matrix,
 
 
 proc fit*(self: HazanSlow, X: Matrix, y: seq[float64],
-          cfm: var CFMSlow[Squared]) =
+          cfm: var CFMSlow) =
   ## Fits the factorization machine on X and y by coordinate descent.
   cfm.init(X)
   let y = checkTarget(cfm, y)
@@ -65,7 +66,6 @@ proc fit*(self: HazanSlow, X: Matrix, y: seq[float64],
     Z: Matrix = zeros(X.shape)
     ZTZ: Matrix
     w: Vector
-    Xp = zeros([nSamples])
     resZ: Vector
     colNormSq: Vector
     Preconditioner: Matrix
@@ -87,7 +87,7 @@ proc fit*(self: HazanSlow, X: Matrix, y: seq[float64],
     if fitIntercept: 
       Z.addCol(ones([nSamples]))
       w.add(cfm.intercept)
-      colNormSq.add(1.0)
+      colNormSq.add(float(nSamples))
       resZ.add(0.0)
     colNormSq += 1e-5
 
@@ -97,6 +97,9 @@ proc fit*(self: HazanSlow, X: Matrix, y: seq[float64],
 
   ZTZ = matmul(Z.T, Z)
   # start optimization
+  predict(yPredQuad, yPredLinear, K, X, cfm.P, cfm.lams, cfm.w,
+            cfm.intercept, ignoreDiag)
+  residual = y - yPredQuad - yPredLinear
   lossOld = norm(residual, 2)^2 / float(nSamples)
   var stepsize = 0.0
   var nTol = 0
@@ -108,6 +111,7 @@ proc fit*(self: HazanSlow, X: Matrix, y: seq[float64],
     predict(yPredQuad, yPredLinear, K, X, cfm.P, cfm.lams, cfm.w,
             cfm.intercept, ignoreDiag)
     residual = y - yPredQuad - yPredLinear
+    
     # fit P
     var gradJ = matmul(X.T*residual, X)
     if ignoreDiag:
@@ -121,61 +125,55 @@ proc fit*(self: HazanSlow, X: Matrix, y: seq[float64],
     var s = self.it
     if s >= cfm.maxComponents: # replace old p
       s = argmin(cfm.lams) # replace old p whose lambda is minimum
-      cfm.P[s] = p
+    cfm.P[s] = p
 
     for i in 0..<nSamples:
       if ignoreDiag:
         cacheK[i] = anovaSlow(X, cfm.P, i, 2, s, nFeatures, 0)
       else:
         cacheK[i] = polySlow(X, cfm.P, i, 2, s, nFeatures, 0)
-    
-    if s != len(cfm.lams): # replace old p
-      K[s] = cacheK
-    else:
-      K.addRow(cacheK) # add new p
+    K[s] = cacheK
 
     # compute yPredQuad
-    yPredQuad[0..^1] = 0.0
-    for s in 0..<len(cfm.lams):
-      yPredQuad += cfm.lams[s] * K[s]
+    predict(yPredQuad, yPredLinear, K, X, cfm.P, cfm.lams, cfm.w,
+            cfm.intercept, ignoreDiag)
+    residual = y - yPredQuad - yPredLinear
 
     # compute stepsize
     if self.optimal:
-      let d = cfm.eta * K[s] - yPredQuad
+      let d = self.eta * K[s] - yPredQuad
       stepsize = dot(d, residual) / norm(d, 2)^2
       stepsize = min(max(1e-10, stepsize), 1.0)
     else:
       stepsize = 2.0 / (float(self.it)+2.0)
 
     # update lams
-    if sum(cfm.lams) + cfm.eta * stepsize > cfm.eta:
-      cfm.lams *= cfm.eta * (1-stepsize) / sum(cfm.lams)
-    if s == len(cfm.lams):
-      cfm.lams.add(cfm.eta*stepsize)
-    else:
-      cfm.lams[s] += cfm.eta*stepsize
-
-    yPredQuad[0..^1] = 0.0
-    for s in 0..<len(cfm.lams):
-      yPredQuad += cfm.lams[s] * K[s]
+    cfm.lams *= (1-stepsize)
+    cfm.lams[s] += self.eta*stepsize
+    if sum(cfm.lams) > self.eta:
+      cfm.lams *= self.eta  / sum(cfm.lams)
 
     # fit w
+    predict(yPredQuad, yPredLinear, K, X, cfm.P, cfm.lams, cfm.w,
+            cfm.intercept, ignoreDiag)
     residual = y - yPredQuad
+    yPredLinear <- 0.0
     if fitLinear:
       vmmul(residual, Z, resZ)
       let maggrad = norm(resZ, 1)
       let tolCG = 1e-5 * maggrad
       w *= colNormSq # since we use left-right preconditioning
-      cg(ZTZ, resZ, w, init=false, tol=tolCG, 
+      cg(ZTZ, resZ, w, maxIter=1000, init=false, tol=tolCG, 
          preconditioner=Preconditioner)
       cfm.w = w[0..<nFeatures]
-      mvmul(X, cfm.w, yPredLinear)
       if fitIntercept:
         cfm.intercept = w[^1]
     elif fitIntercept:
       cfm.intercept = sum(residual) / float(nSamples)
-
+    
     # stopping criterion
+    predict(yPredQuad, yPredLinear, K, X, cfm.P, cfm.lams, cfm.w,
+            cfm.intercept, ignoreDiag)
     residual = y - yPredQuad - yPredLinear
     lossNew = norm(residual, 2)^2  / float(nSamples)
     if lossOld - lossNew < self.tol:

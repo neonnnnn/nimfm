@@ -1,9 +1,9 @@
 import unittest
-import utils, cd_slow
-import nimfm/loss, nimfm/dataset, nimfm/tensor
-import nimfm/factorization_machine, nimfm/fm_base
+import utils, optimizers/cd_slow
+import nimfm/loss, nimfm/dataset, nimfm/tensor/tensor
+import nimfm/models/factorization_machine, nimfm/models/fm_base
 import nimfm/optimizers/coordinate_descent
-import fm_slow
+import models/fm_slow
 
 
 suite "Test coordinate descent":
@@ -123,7 +123,7 @@ suite "Test coordinate descent":
             )
             cd.fit(X, y, fm)
 
-            check abs(fm.intercept-fmSlow.intercept) < 1e-3
+            check abs(fm.intercept-fmSlow.intercept) < 1e-7
             checkAlmostEqual(fm.w, fmSlow.w)
             checkAlmostEqual(fm.P, fmSlow.P)
 
@@ -141,11 +141,11 @@ suite "Test coordinate descent":
 
             var fm = newFactorizationMachine(
               task = regression, degree = degree, nComponents = nComponents,
-              fitLower = fitLower, fitLinear = fitLinear, alpha0 = 1e-9,
-              alpha = 1e-9, beta = 1e-9,
+              fitLower = fitLower, fitLinear = fitLinear,
               fitIntercept = fitIntercept, randomState = 1)
             var cd = newCD(
-              maxIter = 20, verbose = 0, tol = 0
+              maxIter = 20, verbose = 0, tol = 0,
+              alpha0 = 1e-9, alpha = 1e-9, beta = 1e-9,
             )
             fm.init(X)
             let scoreBefore = fm.score(X, y)
@@ -168,19 +168,22 @@ suite "Test coordinate descent":
             var fmWeakReg = newFactorizationMachine(
               task = regression, degree = degree, nComponents = nComponents,
               fitLower = fitLower, fitLinear = fitLinear, warmStart = true,
-              fitIntercept = fitIntercept, randomState = 1,
-              alpha0 = 0, alpha = 0, beta = 0)
+              fitIntercept = fitIntercept, randomState = 1)
             var cd = newCD(
-              maxIter = 100, verbose = 0, tol = 0
+              maxIter = 100, verbose = 0, tol = 0,
+              alpha0=0, alpha=0, beta=0
             )
             cd.fit(X, y, fmWeakReg)
             
             var fmStrongReg = newFactorizationMachine(
               task = regression, degree = degree, nComponents = nComponents,
               fitLower = fitLower, fitLinear = fitLinear, warmStart = true,
-              fitIntercept = fitIntercept, randomState = 2,
-              alpha0 = 1000, alpha = 1000, beta = 1000)
-            cd.fit(X, y, fmStrongReg)
+              fitIntercept = fitIntercept, randomState = 1)
+            var cdStrong = newCD(
+              maxIter = 100, verbose = 0, tol = 0,
+              alpha0=1000000, alpha=1000000, beta=1000000
+            )
+            cdStrong.fit(X, y, fmStrongReg)
 
             check fmWeakReg.score(X, y) < fmStrongReg.score(X, y)
             check abs(fmWeakReg.intercept) >= abs(fmStrongReg.intercept)

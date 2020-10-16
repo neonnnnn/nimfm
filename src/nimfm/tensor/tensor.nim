@@ -5,17 +5,16 @@ import nimlapack
 template `^^`(s, i: untyped): untyped =
   (when i is BackwardsIndex: s.len - int(i) else: int(i))
 
-
 type
   Vector* = seq[float64]
 
   Matrix* = ref object
     data: seq[Vector]
-    shape*: array[2, int]
+    shape: array[2, int]
 
   Tensor* = ref object
     data: seq[Matrix]
-    shape*: array[3, int]
+    shape: array[3, int]
 
 
 proc `$`*[T: Matrix|Tensor](X: T): string =
@@ -26,6 +25,12 @@ proc `$`*[T: Matrix|Tensor](X: T): string =
 
 
 proc shape*[T](self: seq[T]): array[1, int] = [len(self)]
+
+
+proc shape*(self: Matrix): array[2, int] = self.shape
+
+
+proc shape*(self: Tensor): array[3, int] = self.shape
 
 
 proc len*[T: Tensor|Matrix](self: T): int =
@@ -74,6 +79,41 @@ proc eye*(n: int): Matrix =
   result = zeros([n, n])
   for i in 0..<n:
     result.data[i][i] = 1.0
+
+
+# Substitution
+proc `<-`*[T](a: var seq[T], val: float64) {.inline.} =
+  for i in 0..<len(a):
+    a[i] = val
+
+proc `<-`*[T: Matrix|Tensor](A: T, val: float64) {.inline.} =
+  for i in 0..<A.shape[0]:
+    A.data[i] <- val
+
+
+proc `<-`*[T](a: var seq[T], b: seq[T]) {.inline.} =
+  if len(a) != len(b):
+    raise newException(ValueError, "a.len != b.len.")
+  else:
+    for i in 0..<len(a):
+      a[i] = b[i]
+
+
+proc `<-`*(A, B: Matrix) {.inline.} =
+  if A.shape != B.shape:
+    raise newException(ValueError, "A.shape != B.shape.")
+  else:
+    for i in 0..<A.shape[0]:
+      for j in 0..<A.shape[1]:
+        A.data[i][j] = B.data[i][j]
+
+
+proc `<-`*(A, B: Tensor) {.inline.} =
+  if A.shape != B.shape:
+    raise newException(ValueError, "A.shape != B.shape.")
+  else:
+    for i in 0..<A.shape[0]:
+      A.data[i] <- B.data[i]
 
 
 # For Vector broadcasting
@@ -394,6 +434,83 @@ proc vech*(mat: Matrix): Vector =
     for j in 0..<n:
       result[i*n+j] = mat[i, j]
 
+# for Tensor broadcast
+# Tesor-scalar/vector/Matrix in-place operations
+proc `+=`*[T: float64|Vector|Matrix](self: var Tensor, val: T) {.inline.} =
+  for i in 0..<len(self):
+    self.data[i] += val
+
+
+proc `-=`*[T: float64|Vector|Matrix](self: var Tensor, val: T) {.inline.} =
+  self += (-val)
+
+
+proc `*=`*[T: float64|Vector|Matrix](self: var Tensor, val: T) {.inline.} =
+  for i in 0..<len(self):
+    self.data[i] *= val
+
+
+proc `/=`*[T: float64|Vector|Matrix](self: var Tensor, val: T) {.inline.} =
+  for i in 0..<len(self):
+    self.data[i] /= val
+
+
+# Tensor-scalar/vector/Matrix operations returning new Matrix
+proc `-`*(tensor: Tensor): Tensor =
+  new(result)
+  deepCopy(result, tensor)
+  for i in 0..<len(result):
+    result.data[i] *= -1.0
+
+
+proc `+`*[T: float64|Vector|Matrix](tensor: Tensor, val: T): Tensor =
+  new(result)
+  deepCopy(result, tensor)
+  for i in 0..<len(result):
+    result.data[i] += val
+
+
+proc `-`*[T: float64|Vector|Matrix](tensor: Tensor, val: T): Tensor = 
+  tensor + (-val)
+
+
+proc `*`*[T: float64|Vector|Matrix](tensor: Tensor, val: T): Tensor = 
+  new(result)
+  deepCopy(result, tensor)
+  for i in 0..<len(result):
+    result.data[i] *= val
+
+
+proc `/`*[T: float64|Vector|Matrix](tensor: Tensor, val: T): Tensor =
+  new(result)
+  deepCopy(result, tensor)
+  for i in 0..<len(result):
+    result.data[i] /= val
+
+
+proc `+`*[T: float64|Vector|Matrix](val: T, tensor: Tensor): Tensor =
+  tensor + val
+
+
+proc `-`*[T: float64|Vector|Matrix](val: T, tensor: Tensor): Tensor =
+  new(result)
+  deepCopy(result, tensor)
+  result *= -1
+  result += val
+
+
+proc `*`*[T: float64|Vector|Matrix](val: T, tensor: Tensor): Tensor =
+  tensor * val
+
+
+proc `/`*[T: float64|Vector|Matrix](val: T, tensor: Tensor): Tensor =
+  new(result)
+  deepCopy(result, tensor)
+  for i in 0..<result.shape[0]:
+    for j in 0..<result.shape[1]:
+      result[i, j] = val / result[i, j]
+
+
 # for Tensor subsucription
 proc `[]`*(self: Tensor, i, j, k: int): var float64 {.inline.} =
   result = self.data[i].data[j][k]
@@ -415,6 +532,14 @@ proc `[]+=`*(self: var Tensor, i, j, k: int, val: float64) {.inline.} =
 
 proc `[]-=`*(self: var Tensor, i, j, k: int, val: float64) {.inline.} =
   self.data[i][j, k] -= val
+
+
+proc `[]=`*(self: var Tensor, i: int, val: Matrix) {.inline.} =
+  self.data[i] = val
+
+
+proc `[]=`*(self: var Tensor, i, j: int, val: Vector) {.inline.} =
+  self.data[i][j] = val
 
 
 proc toMatrix*(X: seq[seq[float64]]): Matrix =
@@ -479,8 +604,8 @@ proc norm*(X: Matrix, p: int): float64 =
   if p != 0:
     result = pow(result, 1.0/float(p))
 
-
-proc norm*[T](X: T, p: int): float64 =
+# for vector or seq
+proc norm*[V](X: V, p: int): float64 =
   result = 0.0
   if p < 0:
     raise newException(ValueError, "p < 0.")
@@ -491,14 +616,41 @@ proc norm*[T](X: T, p: int): float64 =
     result = pow(result, 1.0/float(p))
 
 
-proc addRow*[Vec](self: var Matrix, x: Vec) =
+proc norm*(X: Matrix, result: var Vector, p: int, axis: int) =  
+  if p < 0:
+    raise newException(ValueError, "p < 0.")
+  if axis == 1:
+    if len(result) < X.shape[0]:
+      result.setLen(X.shape[0])
+    for i in 0..<X.shape[0]:
+      result[i] = norm(X[i], p)
+  elif axis == 0:
+    if len(result) < X.shape[1]:
+      result.setLen(X.shape[1])
+    result[0..<1] = 0.0
+    for i in 0..<X.shape[0]:
+      for j in 0..<X.shape[1]:
+        if p == 0: result[j] += float(X[i, j] != 0)
+        else: result[j] += abs(X[i, j])^p
+    if p != 0:
+      for i in 0..<len(result):
+        result[i] = pow(result[i], 1.0/float(p))
+  else:
+    raise newException(ValueError, "axis != 0 or 1.")
+
+
+proc norm*(X: Matrix, p: int, axis: int): Vector =
+  norm(X, result, p, axis)
+
+
+proc addRow*[V](self: var Matrix, x: V) =
   self.data.add(newSeqWith(self.shape[1], 0.0))
   for j in 0..<len(x):
     self.data[^1][j] = x[j]
   self.shape[0] += 1
 
 
-proc addCol*[Vec](self: var Matrix, x: Vec) =
+proc addCol*[V](self: var Matrix, x: V) =
   for i in 0..<len(x):
     self.data[i].add(x[i])
   self.shape[1] += 1

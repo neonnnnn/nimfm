@@ -1,4 +1,4 @@
-import nimfm/loss, nimfm/tensor
+import nimfm/loss, nimfm/tensor/tensor
 
 
 proc fitLinearCD*[L](w: var Vector, X: Matrix, y: seq[float64],

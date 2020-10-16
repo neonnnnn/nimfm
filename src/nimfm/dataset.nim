@@ -1,93 +1,216 @@
-import sequtils, sugar, parseutils, math, os, strformat, random
+import sequtils, sugar, parseutils, math, os, strformat, random, streams
+import tensor/sparse, tensor/tensor, tensor/sparse_stream
+export NormKind
 
 
 const Numbers = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'}
 
 
 type
-  BaseDataset* = ref object of RootObj
-    nSamples*: int
-    nFeatures*: int
-    data: seq[float64]
+  BaseDataset*[T] = ref object of RootObj
+    nAugments*: int
+    dummy: seq[float64]
+    data*: T
  
-  CSRDataset* = ref object of BaseDataset
-   ## Type for row-wise optimizers.
-   indices: seq[int]
-   indptr: seq[int]
+  CSRDataset* = BaseDataset[CSRMatrix]
 
-  CSCDataset* = ref object of BaseDataset
-    ## Type for column-wise optimizers.
-    indices: seq[int]
-    indptr: seq[int]
+  CSCDataset* = BaseDataset[CSCMatrix]
 
-  NormKind* = enum
-    l1, l2, linfty
+  StreamCSRDataset* = BaseDataset[StreamCSRMatrix]
 
+  StreamCSCDataset* = BaseDataset[StreamCSCMatrix]
+  
+  RowDataset* = CSRDataset|StreamCSRDataset
 
-func shape*(self: BaseDataset): array[2, int] = [self.nSamples, self.nFeatures]
+  ColDataset* = CSCDataset|StreamCSCDataset
 
 
-func nnz*(self: BaseDataset): int =
+func newBaseDataset*[T](data: T): BaseDataset[T] =
+  result = BaseDataset[T](data:data, nAugments: 0, dummy: @[])
+
+
+func nSamples*[T](self: BaseDataset[T]): int = self.data.shape[0]
+
+
+func nFeatures*[T](self: BaseDataset[T]): int =
+  result = self.data.shape[1] + self.nAugments
+
+
+func shape*[T](self: BaseDataset[T]): array[2, int] =
+  ## Returns the shape of the dataset
+  result = [self.nSamples, self.nFeatures]
+
+
+func nnz*[T](self: BaseDataset[T]): int =
   ## Returns the number of non-zero elements in the Dataset
-  result = len(self.data)
+  result = nnz(self.data) + self.nSamples*self.nAugments
 
 
-func max*(self: BaseDataset): float64 =
+func max*[T](self: BaseDataset[T]): float64 =
   ## Returns the maximum value in the Dataset
   result = max(0.0, max(self.data))
+  if self.nAugments > 0:
+    result = max(result, max(self.dummy[0..<self.nAugments]))
 
 
-func min*(self: BaseDataset): float64 =
+func min*[T](self: BaseDataset[T]): float64 =
   ## Returns the maximum value in the Dataset
   result = min(0.0, min(self.data))
+  if self.nAugments > 0:
+    result = min(result, min(self.dummy[0..<self.nAugments]))
 
 
-proc `*=`*(self: BaseDataset, val: float64) = 
+proc `*=`*[T](self: BaseDataset[T], val: float64) = 
   ## Multiples val to each element (in-place).
-  for i in 0..<self.nnz:
-    self.data[i] *= val
+  self.data *= val
 
 
-proc `/=`*(self: BaseDataset, val: float64) = 
-  ## Divvides each element by val (in-place).
-  self *= 1.0 / val
+proc `/=`*[T](self: BaseDataset[T], val: float64) = 
+  ## Divides each element by val (in-place).
+  self.data *= 1.0 / val
 
 
-func sum*(self: BaseDataset): float64 =
-  ## Returns the sum of elements
-  result = sum(self.data)
+proc addDummyFeature*[T](self: BaseDataset[T], value=1.0, n=1) =
+  ## Adds an additional dummy feature.
+  if n == 0: discard
+  for i in 0..<n:
+    if self.nAugments + i < len(self.dummy):
+      self.dummy[self.nAugments+i] = value
+    else:
+      self.dummy.add(value)
+  self.nAugments += n
+
+
+proc removeDummyFeature*[T](self: BaseDataset[T], n=1) =
+  ## Adds an additional dummy feature.
+  if n == 0: discard
+  elif self.nAugments - n >= 0:
+    self.nAugments -= n
+    self.dummy[self.nAugments..<self.nAugments+n] = 0.0
+  else:
+    raise newException(ValueError, "No dummy feature.")
 
 
 func newCSRDataset*(data: seq[float64], indices, indptr: seq[int], 
                     nSamples, nFeatures: int): CSRDataset =
-  ## Create new CSRDataset instance
-  result = CSRDataset(data: data, indices: indices, indptr: indptr, 
-                      nSamples: nSamples, nFeatures: nFeatures)
+  ## Creates new CSRDataset instance
+  let csr = newCSRMatrix(data=data, indices=indices, indptr=indptr,
+                         shape=[nSamples, nFeatures])
+  result = CSRDataset(data: csr, nAugments: 0, dummy: @[])
 
 
 func newCSCDataset*(data: seq[float64], indices, indptr: seq[int], 
                     nSamples, nFeatures: int): CSCDataset =
-  ## Create new CSCDataset instance
-  result = CSCDataset(data: data, indices: indices, indptr: indptr, 
-                      nSamples: nSamples, nFeatures: nFeatures)
+  ## Creates new CSCDataset instance
+  let csc = newCSCMatrix(data=data, indices=indices, indptr=indptr,
+                         shape=[nSamples, nFeatures])
+  result = CSCDataset(data: csc, nAugments: 0, dummy: @[])
 
 
-iterator getRow*(self: CSRDataset, i: int): tuple[j: int, val: float64] =
-  ## yield the index and the value of non-zero elements in i-th row.
-  var jj = self.indptr[i]
-  let jjMax = self.indptr[i+1]
-  while (jj < jjMax):
-    yield (self.indices[jj], self.data[jj])
-    inc(jj)
+func newCSRDataset*(data: CSRMatrix): CSRDataset =
+  ## Creates new CSRDataset instance
+  result = CSRDataset(data: data, nAugments: 0, dummy: @[])
 
 
-iterator getCol*(self: CSCDataset, j: int): tuple[i: int, val: float64] =
-  ## yield the index and the value of non-zero elements in j-th column.
-  var ii = self.indptr[j]
-  let iiMax = self.indptr[j+1]
-  while (ii < iiMax):
-    yield (self.indices[ii], self.data[ii])
-    inc(ii)
+func newCSCDataset*(data: CSCMatrix): CSCDataset =
+  ## Creates new CSCDataset instance
+  result = CSCDataset(data: data, nAugments: 0, dummy: @[])
+
+
+proc newStreamCSRDataset*(f: string, cacheSize=200): StreamCSRDataset =
+  ## Creates new StreamCSRDataset instance
+  let csr = newStreamCSRMatrix(f=f, cacheSize=cacheSize)
+  result = newBaseDataset(data=csr)
+
+
+proc newStreamCSCDataset*(f: string, cacheSize=200): StreamCSCDataset =
+  ## Creates new StreamCSCDataset instance
+  let csc = newStreamCSCMatrix(f=f, cacheSize=cacheSize)
+  result = newBaseDataset(data=csc)
+
+
+iterator getRow*(self: RowDataset, i: int): (int, float64) =
+  ## Yields the index and the value of non-zero elements in i-th row.
+  for (j, val) in self.data.getRow(i):
+    yield (j, val)
+
+  if self.nAugments > 0:
+    for j in 0..<self.nAugments: # dummy feature
+      yield (j+self.data.shape[1], self.dummy[j])
+
+
+proc getRow*(self: RowDataset, i: int): iterator(): (int, float64) =
+  ## Yields the index and the value of non-zero elements in i-th row.
+  return iterator(): (int, float64) =
+    for (j, val) in self.data.getRow(i):
+      yield (j, val)
+
+    if self.nAugments > 0:
+      for j in 0..<self.nAugments: # dummy feature
+        yield (j+self.data.shape[1], self.dummy[j])
+
+
+iterator getRowIndices*(self: RowDataset, i: int): int =
+  ## Yields the index of non-zero elements in i-th row.
+  for j in self.data.getRowIndices(i):
+    yield j
+
+  if self.nAugments > 0:
+    for j in 0..<self.nAugments: # dummy feature
+      yield j+self.data.shape[1]
+
+
+proc getRowIndices*(self: RowDataset, i: int): iterator(): int =
+  ## Yields the index of non-zero elements in i-th row.
+  return iterator(): int =
+    for j in self.data.getRowIndices(i):
+      yield j
+
+    if self.nAugments > 0:
+      for j in 0..<self.nAugments: # dummy feature
+        yield j+self.data.shape[1]
+
+
+iterator getCol*(self: ColDataset, j: int): (int, float64) =
+  ## Yields the index and the value of non-zero elements in j-th column.
+  if j < self.data.shape[1]:
+    for (i, val) in self.data.getCol(j):
+      yield (i, val)
+  elif j < self.data.shape[1]+self.nAugments: # dummy feature
+    for i in 0..<self.nSamples:
+      yield (i, self.dummy[j-self.data.shape[1]])
+
+
+proc getCol*(self: ColDataset, j: int): iterator(): (int, float64) = 
+  ## Yields the index and the value of non-zero elements in j-th column.
+  return iterator(): (int, float64) =
+    if j < self.data.shape[1]:
+      for (i, val) in self.data.getCol(j):
+        yield (i, val)
+    elif j < self.data.shape[1]+self.nAugments: # dummy feature
+      for i in 0..<self.nSamples:
+        yield (i, self.dummy[j-self.data.shape[1]])
+
+
+iterator getColIndices*(self: ColDataset, j: int): int =
+  ## Yields the index of non-zero elements in j-th column.
+  if j < self.data.shape[1]:
+    for i in self.data.getColIndices(j):
+      yield i
+  elif j < self.data.shape[1]+self.nAugments: # dummy feature
+    for i in 0..<self.nSamples:
+      yield i
+
+
+proc getColIndices*(self: ColDataset, j: int): iterator(): int =
+  ## Yields the index of non-zero elements in j-th column.
+  return iterator(): int =
+    if j < self.data.shape[1]:
+      for i in self.data.getColIndices(j):
+        yield i
+    elif j < self.data.shape[1]+self.nAugments: # dummy feature
+      for i in 0..<self.nSamples:
+        yield i
 
 
 func `[]`*(self: CSRDataset, i, j: int): float64 =
@@ -110,7 +233,7 @@ func `[]`*(self: CSCDataset, i, j: int): float64 =
     elif i2 > i: break
 
 
-func checkIndicesRow(X: BaseDataset, indicesRow: openarray[int]) =
+func checkIndicesRow[T](X: BaseDataset[T], indicesRow: openarray[int]) =
   if len(indicesRow) < 1:
     raise newException(ValueError, "Invalid slice: nSamples < 1.")
 
@@ -126,24 +249,9 @@ func `[]`*(X: CSRDataset, indicesRow: openarray[int]): CSRDataset =
   ## Returns new CSRDataset whose row vectors are that of X.
   ## Specifies the indices of row vectors taken out by indicesRow.
   checkIndicesRow(X, indicesRow)
-  let nFeatures = X.nFeatures
-  let nSamples = len(indicesRow)
-  var indptr = newSeqWith(nSamples+1, 0)
-  var nnz = 0
-  for ii, i in indicesRow:
-    nnz += (X.indptr[i+1] - X.indptr[i])
-    indptr[ii+1] = nnz
-  
-  var indices = newSeqWith(nnz, 0)
-  var data = newSeqWith(nnz, 0.0)
-  var count = 0
-  for i in indicesRow:
-    for (j, val) in X.getRow(i):
-      indices[count] = j
-      data[count] = val
-      inc(count)
-
-  result = newCSRDataset(data, indices, indptr, nSamples, nFeatures)
+  let data = X.data[indicesRow]
+  let dummy = X.dummy
+  result = CSRDataset(data: data, nAugments: X.nAugments, dummy: dummy)
 
 
 func `[]`*(X: CSRDataset, slice: Slice[int]): CSRDataset =
@@ -161,28 +269,9 @@ func `[]`*(X: CSRDataset, slice: HSlice[int, BackwardsIndex]): CSRDataset =
 func `[]`*(X: CSCDataset, slice: Slice[int]): CSCDataset =
   ## Takes out the row vectors of X and returns new CSCDatasets by slicing.
   checkIndicesRow(X, toSeq(slice))
-  let nFeatures = X.nFeatures
-  let nSamples = slice.b - slice.a+1
-  var indptr = newSeqWith(X.nFeatures+1, 0)
-  
-  for j in 0..<nFeatures:
-    for (i, val) in X.getCol(j):
-      if i >= slice.a and i <= slice.b:
-        inc(indptr[j+1])
-  
-  cumsum(indptr)
-  let nnz = indptr[^1]
-  var indices = newSeqWith(nnz, 0)
-  var data = newSeqWith(nnz, 0.0)
-
-  for j in 0..<nFeatures:
-    var count = 0
-    for (i, val) in X.getCol(j):
-      if i >= slice.a and i <= slice.b:
-        indices[indptr[j] + count] = i - slice.a
-        data[indptr[j]+count] = val
-        inc(count)
-  result = newCSCDataset(data, indices, indptr, nSamples, nFeatures)
+  let data = X.data[slice]
+  let dummy = X.dummy
+  result = CSCDataset(data: data, nAugments: X.nAugments, dummy: dummy)
 
 
 func `[]`*(X: CSCDataset, slice: HSlice[int, BackwardsIndex]): CSCDataset =
@@ -190,8 +279,20 @@ func `[]`*(X: CSCDataset, slice: HSlice[int, BackwardsIndex]): CSCDataset =
   result = X[slice.a..(X.nSamples-int(slice.b))]
 
 
-func shuffle*[T](X: CSRDataset, y: seq[T]):
-                 tuple[XShuffled: CSRDataset, yShuffled: seq[T]] =
+func shuffle*[T](X: CSRDataset, y: seq[T],
+                 indices: openarray[int]): (CSRDataset, seq[T]) =
+  ## Shuffles the dataset X and target y by using indices.
+  if len(y) != X.nSamples:
+    raise newException(ValueError, "X.nSamples != len(y)")
+
+  var yShuffled = newSeq[T](len(indices))
+  for ii, i in indices:
+    yShuffled[ii] = y[i]
+  
+  result = (X[indices], yShuffled)
+
+
+func shuffle*[T](X: CSRDataset, y: seq[T]): (CSRDataset, seq[T]) =
   ## Shuffles the dataset X and target y.
   if len(y) != X.nSamples:
     raise newException(ValueError, "X.nSamples != len(y)")
@@ -205,179 +306,36 @@ func shuffle*[T](X: CSRDataset, y: seq[T]):
   result = shuffle(X, y, indices)
 
 
-func shuffle*[T](X: CSRDataset, y: seq[T], indices: openarray[int]):
-                 tuple[XShuffled: CSRDataset, yShuffled: seq[T]] =
-  ## Shuffles the dataset X and target y by using indices.
-  if len(y) != X.nSamples:
-    raise newException(ValueError, "X.nSamples != len(y)")
+proc normalize*[T](X: BaseDataset[T], axis=1, norm: NormKind = l2) =
+  ## Normalizes dataset X by l1, l2, or linfty norm (in-place).
+  ## axis=1: normalize per instance.
+  ## axis=0: normalize per feature.
+  ## Augmented features are ignored.
+  normalize(X.data, axis, norm)
 
-  var yShuffled = newSeq[T](len(indices))
-  for ii, i in indices:
-    yShuffled[ii] = y[i]
   
-  result = (X[indices], yShuffled)
-    
-
-# Normizling function for CSRDataset
-proc normalize(data: var seq[float64], indices, indptr: seq[int],
-               axis, nRows, nCols: int, f: (float64, float64)->float64,
-               g: (float64)->float64) =
-  ## f: incremental update function for norm.
-  ## g: finalize function for norm.
-  if axis == 1:
-    for i in 0..<nRows:
-      var norm = 0.0
-      for val in data[indptr[i]..<indptr[i+1]]:
-        norm = f(norm, val)
-      norm = g(norm)
-      if norm != 0.0:
-        for jj in indptr[i]..<indptr[i+1]:
-          data[jj] /= norm
-  elif axis == 0:
-    var norms = newSeqWith(nCols, 0.0)
-    for (j, val) in zip(indices, data):
-      norms[j] = f(norms[j], val)
-    for j in 0..<nCols:
-      norms[j] = g(norms[j])
-    for jj, j in indices:
-      if norms[j] != 0.0:
-        data[jj] /= norms[j]
-
-
-proc normalize*(X: var CSRDataset, axis=1, norm: NormKind = l2) =
-  ## Normalizes dataset X by l1, l2, or linfty norm (in-place).
-  ## axis=1: normalize per instance.
-  ## axis=0: normalize per feature.
-  case norm
-  of l2:
-    normalize(X.data, X.indices, X.indptr, axis, X.nSamples, X.nFeatures,
-              (x, y) => x + y^2, sqrt)
-  of l1:
-    normalize(X.data, X.indices, X.indptr, axis, X.nSamples, X.nFeatures,
-             (x, y) => x + abs(y), x => x)
-  of linfty:
-    normalize(X.data, X.indices, X.indptr, axis, X.nSamples, X.nFeatures,
-              (x, y) => max(x, abs(y)), x => x)
-
-
-proc normalize*(X: var CSCDataset, axis=1, norm: NormKind = l2) =
-  ## Normalizes dataset X by l1, l2, or linfty norm (in-place).
-  ## axis=1: normalize per instance.
-  ## axis=0: normalize per feature.
-  case norm # Leverage the fact that transpose of CSC is CSR
-  of l2:
-    normalize(X.data, X.indices, X.indptr, 1-axis, X.nFeatures, X.nSamples,
-              (x, y) => x + y^2, sqrt)
-  of l1:
-    normalize(X.data, X.indices, X.indptr, 1-axis, X.nFeatures, X.nSamples,
-             (x, y) => x + abs(y), x => x)
-  of linfty:
-    normalize(X.data, X.indices, X.indptr, 1-axis, X.nFeatures, X.nSamples,
-              (x, y) => max(x, abs(y)), x => x)
-
-
-func toCSR*(input: seq[seq[float64]]): CSRDataset =
+func toCSRDataset*(input: seq[seq[float64]]): CSRDataset =
   ## Transforms seq[seq[float64]] to CSRDataset.
-  let
-    nSamples = len(input)
-    nFeatures = len(input[0])
-  var
-    data: seq[float64]
-    indices: seq[int]
-    indptr: seq[int] = newSeqWith(nSamples+1, 0)
-  for i in 0..<nSamples:
-    for j in 0..<nFeatures:
-      if input[i][j] != 0.0:
-        indptr[i+1] += 1
-
-  cumsum(indptr)
-  data = newSeqWith(indptr[nSamples], 0.0)
-  indices = newSeqWith(indptr[nSamples], 0)
-  var count = 0
-  for i in 0..<nSamples:
-    for j in 0..<nFeatures:
-      if input[i][j] != 0.0:
-        data[count] = input[i][j]
-        indices[count] = j
-        count += 1
-  result = newCSRDataset(
-    data=data, indices=indices, indptr=indptr, nSamples=nSamples,
-    nFeatures=nFeatures)
+  let csr = toCSRMatrix(input)
+  result = CSRDataset(data: csr, nAugments: 0, dummy: @[])
 
 
-func toCSC*(input: seq[seq[float64]]): CSCDataset =
+func toCSCDataset*(input: seq[seq[float64]]): CSCDataset =
   ## Transforms seq[seq[float64]] to CSCDataset.
-  let
-    nSamples = len(input)
-    nFeatures = len(input[0])
-  var
-    data: seq[float64]
-    indices: seq[int]
-    indptr: seq[int] = newSeqWith(nFeatures+1, 0)
-
-  for i in 0..<nSamples:
-    for j in 0..<nFeatures:
-      if input[i][j] != 0.0:
-        indptr[j+1] += 1
-
-  cumsum(indptr)
-  data = newSeqWith(indptr[nFeatures], 0.0)
-  indices = newSeqWith(indptr[nFeatures], 0)
-  var offsets = newSeqWith(nFeatures, 0)
-  for i in 0..<nSamples:
-    for j in 0..<nFeatures:
-      if input[i][j] != 0.0:
-        data[indptr[j]+offsets[j]] = input[i][j]
-        indices[indptr[j]+offsets[j]] = i
-        offsets[j] += 1
-
-  result = newCSCDataset(
-    data=data, indices=indices, indptr=indptr, nSamples=nSamples,
-    nFeatures=nFeatures)
+  let csc = toCSCMatrix(input)
+  result = CSCDataset(data: csc, nAugments: 0, dummy: @[])
 
 
-proc toCSR*(self: CSCDataset): CSRDataset =
+proc toCSRDataset*(self: CSCDataset): CSRDataset =
   ## Transforms CSCDataset to CSRDataset
-  let nSamples = self.nSamples
-  let nFeatures = self.nFeatures
-  var data = newSeqWith(self.nnz, 0.0)
-  var indices = newSeqWith(self.nnz, 0)
-  var indptr = newSeqWith(self.nSamples+1, 0)
-  
-  for j in 0..<nFeatures:
-    for (i, val) in self.getCol(j):
-      indptr[i+1] += 1
-  cumsum(indptr)
-  var offsets = newSeqWith(nSamples, 0)
-  for j in 0..<nFeatures:
-    for (i, val) in self.getCol(j):
-      data[indptr[i]+offsets[i]] = val
-      indices[indptr[i] + offsets[i]] = j
-      offsets[i] += 1
-  result = newCSRDataset(data=data, indices=indices, indptr=indptr,
-                         nSamples=nSamples, nFeatures=nFeatures)
+  let csr = toCSRMatrix(self.data)
+  result = CSRDataset(data: csr, nAugments: 0, dummy: @[])
 
 
-func toCSC*(self: CSRDataset): CSCDataset =
+func toCSCDataset*(self: CSRDataset): CSCDataset =
   ## Transforms CSRDataset to CSCDataset
-  let nSamples = self.nSamples
-  let nFeatures = self.nFeatures
-  var data = newSeqWith(self.nnz, 0.0)
-  var indices = newSeqWith(self.nnz, 0)
-  var indptr = newSeqWith(self.nFeatures+1, 0)
-  
-  for i in 0..<nSamples:
-    for (j, val) in self.getRow(i):
-      indptr[j+1] += 1
-  cumsum(indptr)
-  var offsets = newSeqWith(nFeatures, 0)
-  for i in 0..<nSamples:
-    for (j, val) in self.getRow(i):
-      data[indptr[j]+offsets[j]] = val
-      indices[indptr[j] + offsets[j]] = i
-      offsets[j] += 1
-  result = newCSCDataset(data=data, indices=indices, indptr=indptr,
-                         nSamples=nSamples, nFeatures=nFeatures)
+  let csc = toCSCMatrix(self.data)
+  result = CSCDataset(data: csc, nAugments: 0, dummy: @[])
 
 
 func toSeq*(self: CSRDataset): seq[seq[float64]] = 
@@ -390,6 +348,74 @@ func toSeq*(self: CSRDataset): seq[seq[float64]] =
       result[i][j] = val
 
 
+func vstack*(datasets: varargs[CSRDataset]): CSRDataset =
+  ## Stacks CSRDatasets vertically
+  var mats = newSeq[CSRMatrix](len(datasets))
+  var nSamples = 0
+  for i, X in datasets:
+    if X.nAugments == 0:
+      mats[i] = X.data
+    else:
+      var dummy = newSeqWith(X.nSamples, newSeqWith(X.nAugments, 0.0))
+      for n in 0..<X.nSamples:
+        dummy[n] = X.dummy[0..<X.nAugments]
+      mats[i] = hstack([X.data, toCSRMatrix(dummy)])
+  
+  let data = vstack(mats)
+  result = newCSRDataset(data)
+
+
+func vstack*(datasets: varargs[CSCDataset]): CSCDataset =
+  ## Stacks CSCDatasets vertically
+  var mats = newSeq[CSCMatrix](len(datasets))
+  var nSamples = 0
+  for i, X in datasets:
+    if X.nAugments == 0:
+      mats[i] = X.data
+    else:
+      var dummy = newSeqWith(X.nSamples, newSeqWith(X.nAugments, 0.0))
+      for n in 0..<X.nSamples:
+        dummy[n] = X.dummy[0..<X.nAugments]
+      mats[i] = hstack([X.data, toCSCMatrix(dummy)])
+  
+  let data = vstack(mats)
+  result = newCSCDataset(data)
+
+
+func hstack*(datasets: varargs[CSRDataset]): CSRDataset =
+  ## Stacks CSRDatasets horizontally.
+  var mats = newSeq[CSRMatrix](len(datasets))
+  var nSamples = 0
+  for i, X in datasets:
+    if X.nAugments == 0:
+      mats[i] = X.data
+    else:
+      var dummy = newSeqWith(X.nSamples, newSeqWith(X.nAugments, 0.0))
+      for n in 0..<X.nSamples:
+        dummy[n] = X.dummy[0..<X.nAugments]
+      mats[i] = hstack([X.data, toCSRMatrix(dummy)])
+  
+  let data = hstack(mats)
+  result = newCSRDataset(data)
+
+
+func hstack*(datasets: varargs[CSCDataset]): CSCDataset =
+  ## Stacks CSCDatasets horizontally.
+  var mats = newSeq[CSCMatrix](len(datasets))
+  var nSamples = 0
+  for i, X in datasets:
+    if X.nAugments == 0:
+      mats[i] = X.data
+    else:
+      var dummy = newSeqWith(X.nSamples, newSeqWith(X.nAugments, 0.0))
+      for n in 0..<X.nSamples:
+        dummy[n] = X.dummy[0..<X.nAugments]
+      mats[i] = hstack([X.data, toCSCMatrix(dummy)])
+  
+  let data = hstack(mats)
+  result = newCSCDataset(data)
+
+
 func toSeq*(self: CSCDataset): seq[seq[float64]] = 
   ## Transforms CSCDataset to seq[seq[float64]]
   let nSamples = self.nSamples
@@ -398,43 +424,6 @@ func toSeq*(self: CSCDataset): seq[seq[float64]] =
   for j in 0..<nSamples:
     for (i, val) in self.getCol(j):
       result[i][j] = val
-
-
-func vstack*(dataseq: varargs[CSRDataset]): CSRDataset =
-  ## Stacking CSRDatasets vertically.
-  new(result)
-  result.nSamples = dataseq[0].nSamples
-  result.nFeatures = dataseq[0].nFeatures
-  result.data = dataseq[0].data
-  result.indices = dataseq[0].indices
-  result.indptr = dataseq[0].indptr
-
-  for X in dataseq[1..^1]:
-    let nnz = result.nnz
-    if X.nFeatures != result.nFeatures:
-      raise newException(ValueError, "Different nFeatures.")
-    result.data &= X.data
-    result.indices &= X.indices
-    result.indptr &= X.indptr[1..^1].map(x=>(nnz+x))
-    result.nSamples += X.nSamples
-
-
-func hstack*(dataseq: varargs[CSCDataset]): CSCDataset =
-  ## Stacking CSCDatasets horizontally.
-  new(result)
-  result.nSamples = dataseq[0].nSamples
-  result.nFeatures = dataseq[0].nFeatures
-  result.data = dataseq[0].data
-  result.indices = dataseq[0].indices
-  result.indptr = dataseq[0].indptr
-  for X in dataseq[1..^1]:
-    let nnz = result.nnz
-    if X.nSamples != result.nSamples:
-      raise newException(ValueError, "Different nSamples.")
-    result.data &= X.data
-    result.indices &= X.indices
-    result.indptr &= X.indptr[1..^1].map(x=>(nnz+x))
-    result.nFeatures += X.nFeatures
 
 
 proc loadSVMLightFile(f: string, y: var seq[float64]):
@@ -573,7 +562,7 @@ proc loadSVMLightFile*(f: string, dataset: var CSCDataset, y: var seq[int],
 
 proc dumpSVMLightFile*(f: string, X: CSRDataset, y: seq[SomeNumber]) =
   ## Dumps CSRDataset and seq[float64] as svmlight/libsvm format file.
-  var f: File = open(f, fmwrite)
+  var f: File = open(f, fmWrite)
   if X.nSamples != len(y):
     raise newException(ValueError, "X.nSamples != len(y).")
 
@@ -589,7 +578,7 @@ proc dumpSVMLightFile*(f: string, X: CSRDataset, y: seq[SomeNumber]) =
 proc dumpSVMLightFile*(f: string, X: seq[seq[float64]], y: seq[SomeNumber]) =
   ## Dumps seq[seq[float64]] and seq[SomeNumber] as 
   ## svmlight/libsvm format file.
-  var f: File = open(f, fmwrite)
+  var f: File = open(f, fmWrite)
   if len(X) != len(y):
     raise newException(ValueError, "X.nSamples != len(y).")
 
@@ -756,3 +745,210 @@ proc loadUserItemRatingFile*(f: string, X: var CSCDataset,
 
   X = newCSCDataset(data=data, indices=indices, indptr=indptr,
                     nFeatures=nUsers+nItems, nSamples=nSamples)
+
+
+proc loadStreamLabel*(fIn: string, nSamples: int): seq[float64] =
+  result = newSeqWith(nSamples, 0.0)
+  var strm = openFileStream(expandTIlde(fIn), fmRead)
+  var val: float64
+  for i in 0..<nSamples:
+    strm.read(val)
+    result.add(val)
+  if not strm.atEnd:
+    echo(fmt"nSamples={nSamples} values have been read but some values are left.")
+  strm.close()
+
+
+proc loadStreamLabel*(fIn: string): seq[float64] =
+  result = newSeqWith(0, 0.0)
+  var strm = openFileStream(expandTIlde(fIn), fmRead)
+  var val: float64
+  while not strm.atEnd:
+    strm.read(val)
+    result.add(val)
+  strm.close()
+
+
+proc convertSVMLightFile*(fIn: string, fOutX: string, fOutY: string) =
+  ### Converts an SVMLightFile to a binary file (0-based index).
+  var
+    val: float64
+    minVal = high(float64)
+    maxVal = low(float64)
+    pos, j: int
+    minIndex = 1
+    maxIndex = 0
+    nSamples = 0
+    nnz = 0
+    strmIn = openFileStream(expandTilde(fIn), fmRead)
+    strmOutX = openFileStream(expandTilde(fOutX), fmWrite)
+    strmOutY = openFileStream(expandTilde(fOutY), fmWrite)
+    target: float64
+
+  if strmIn.isNil:
+    raise newException(ValueError, fmt"{fIn} cannot be read.")
+  if strmOutX.isNil:
+    raise newException(ValueError, fmt"{fOutX} cannot be read.")
+  if strmOutY.isNil:
+    raise newException(ValueError, fmt"{fOutY} cannot be read.")
+
+  # determine header information
+  for line in strmIn.lines:
+    pos = 0
+    nSamples.inc()
+    pos.inc(parseFloat(line, target, pos))
+    pos.inc()
+    while pos < len(line):
+      pos.inc(parseInt(line, j, pos))
+      minIndex = min(j, minIndex)
+      maxIndex = max(j, maxIndex)
+      pos.inc()
+      pos.inc(parseFloat(line, val, pos))
+      minVal = min(minVal, val)
+      maxVal = max(maxVal, val)
+      pos.inc()
+      nnz.inc()
+  if minIndex < 0:
+    raise newException(ValueError, "Negative index is included.")
+  let nFeatures = maxIndex - minIndex + 1
+  var header = SparseStreamHeader(nRows: nSamples, nCols: nFeatures, nnz: nnz,
+                                  max: maxVal, min: minVal)
+  var element = SparseElement(val: 0.0, id: 0)
+  # read again and write
+  strmOutX.write(magicStringCSR)
+  strmOutX.writeData(addr(header), sizeof(header))
+  strmIn.setPosition(0)
+  for line in strmIn.lines:
+    # determine nnz of line
+    pos = 0
+    var nnzRow = 0
+    pos.inc(parseFloat(line, target, pos))
+    pos.inc()
+    # count nnz of each row
+    while pos < len(line):
+      pos.inc(parseInt(line, j, pos))
+      pos.inc()
+      pos.inc(parseFloat(line, val, pos))
+      pos.inc()
+      nnz.inc()
+      inc(nnzRow)
+    # parse string and write
+    strmOutX.write(nnzRow)
+    pos = 0
+    pos.inc(parseFloat(line, target, pos))
+    pos.inc()
+    strmOutY.write(target)
+    while pos < len(line):
+      pos.inc(parseInt(line, element.id, pos))
+      pos.inc()
+      pos.inc(parseFloat(line, element.val, pos))
+      pos.inc()
+      nnz.inc()
+      element.id -= minIndex
+      strmOutX.write(element)
+
+  strmIn.close()
+  strmOutX.close()
+  strmOutY.close()
+
+
+proc transposeFile*(fIn: string, fOut:string, cacheSize=200) =
+  ## Transposes a StreamCSC/CSR and write it.
+  var
+    strmIn = openFileStream(expandTilde(fIn), fmRead)
+    strmOut = openFileStream(expandTilde(fOut), fmWrite)
+
+  if strmIn.isNil:
+    raise newException(ValueError, fmt"{fIn} cannot be read.")
+  if strmOut.isNil:
+    raise newException(ValueError, fmt"{fOut} cannot be read.")
+  var header: SparseStreamHeader
+  var magic: array[nMagicString, char]
+  discard strmIn.readData(addr(magic), nMagicString)
+
+  if magic == magicStringCSR:
+    strmOut.write(magicStringCSC)
+  elif magic == magicStringCSC:
+    strmOut.write(magicStringCSR)
+  else:
+    let msg = fmt"{fIn} is not neither StreamCSC and StreamCSR file."
+    raise newException(IOError, msg)
+  
+  discard strmIn.readData(addr(header), sizeof(header))
+  
+  strmOut.write(header)
+
+  # read and write
+  if magic == magicStringCSC:
+    swap(header.nCols, header.nRows)
+  var nnz: int
+  var nnzCols = newSeqWith(header.nCols, 0)
+  var nnzColsRest = newSeqWith(header.nCols, 0)
+  var offsets = newSeqWith(header.nCols, 0)
+  var element: SparseElement
+  let tmp = (cacheSize * 1024^2 - 3*sizeof(int)*header.nCols)
+  var nCachedElementsMax = tmp div sizeof(SparseElement)
+  var elements = newSeq[SparseElement](nCachedElementsMax)
+  # determine the nnz of each col
+  for i in 0..<header.nRows:
+    strmIn.read(nnz)
+    for j in 0..<nnz:
+      strmIn.read(element)
+      inc(nnzCols[element.id])
+  
+  for j in 0..<header.nCols:
+    nnzColsRest[j] = nnzCols[j]
+  # write file
+  var j = 0
+  var lastRead = -1
+
+  strmOut.write(nnzCols[0])
+  while j < header.nCols:
+    var nCachedCols = 0
+    strmIn.setPosition(nMagicString+sizeof(SparseStreamHeader))
+    # determine the number of cols read
+    # in this loop, j..<(j+nCachedCols) columns are dumped completely
+    var nCachedRest = nCachedElementsMax
+    while j + nCachedCols < header.nCols:
+      offsets[j+nCachedCols] = nCachedElementsMax - nCachedRest
+      nCachedRest -= nnzColsRest[j+nCachedCols]
+      if nCachedRest >= 0:
+        nnzColsRest[j+nCachedCols] = 0
+        inc(nCachedCols)
+      else:
+        nnzColsRest[j+nCachedCols] = -nCachedRest
+        break
+    
+    # read rows and caches
+    var nCached = 0
+    var lastReadNext = 0
+    for i in 0..<header.nRows:
+      if nCached == nCachedElementsMax:
+        break
+      var nnzRow = 0
+      strmIn.read(nnzRow)
+      for _ in 0..<nnzRow:
+        strmIn.read(element)
+        if element.id >= j and element.id <= (j+nCachedCols):
+          if element.id == j and i <= lastRead: # already read
+            continue
+          if element.id == (j+nCachedCols):
+            if offsets[element.id] >= nCachedElementsMax: # filled
+              continue
+            else:
+              lastReadNext = i
+          elements[offsets[element.id]].id = i
+          elements[offsets[element.id]].val = element.val
+          inc(offsets[element.id])
+          inc(nCached)
+    # write!
+    for ii in 0..<nCached:
+      strmOut.write(elements[ii])
+      dec(nnzCols[j])
+      while j < header.nCols and nnzCols[j] == 0:
+        inc(j)
+        if j < header.nCols:
+          strmOut.write(nnzCols[j])
+    lastRead = lastReadNext
+  strmIn.close()
+  strmOut.close()

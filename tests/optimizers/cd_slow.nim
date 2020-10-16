@@ -1,18 +1,22 @@
-import nimfm/tensor, nimfm/optimizers/optimizer_base
+import nimfm/tensor/tensor, nimfm/optimizers/optimizer_base
 import sequtils, math
-import fm_slow, kernels_slow, fit_linear_slow, utils
+import ../models/fm_slow, ../kernels_slow, fit_linear_slow, ../comb
+from nimfm/loss import newSquared
 
 type
-  CDSlow* = ref object of BaseCSCOptimizer
+  CDSlow*[L] = ref object of BaseCSCOptimizer
     ## Coordinate descent solver for test.
+    loss: L
 
-proc newCDSlow*(maxIter = 100, verbose = 1, tol = 1e-3):
-                               CDSlow =
-  result = CDSlow(maxIter: maxIter, tol: tol, verbose: verbose)
+proc newCDSlow*[L](maxIter = 100, alpha0 = 1e-6, alpha = 1e-3, beta = 1e-3,
+                   loss: L =newSquared(), verbose = 1,
+                   tol = 1e-3): CDSlow[L] =
+  result = CDSlow[L](maxIter: maxIter, alpha0: alpha0, alpha: alpha,
+                     beta: beta, loss: loss, tol: tol, verbose: verbose)
 
 
-proc predict(P: Tensor, w: Vector, intercept: float64, X: Matrix,
-             yPred: var seq[float64], degree: int) =
+proc predict*(P: Tensor, w: Vector, intercept: float64, X: Matrix,
+              yPred: var seq[float64], degree: int) =
 
   let
     nSamples = X.shape[0]
@@ -35,10 +39,10 @@ proc predict(P: Tensor, w: Vector, intercept: float64, X: Matrix,
         yPred[i] += anova
 
 
-# compute gradient naively
+# compute ient naively
 # dA/dpj =  anova_without_j  * xj
-proc computeDerivatives(P: Tensor, X: Matrix, dA: var Vector,
-                        degree, order, s, j, nAugments: int) =
+proc computeDerivatives*(P: Tensor, X: Matrix, dA: var Vector,
+                         degree, order, s, j, nAugments: int) =
   let
     nSamples = X.shape[0]
     nFeatures = X.shape[1]
@@ -46,7 +50,7 @@ proc computeDerivatives(P: Tensor, X: Matrix, dA: var Vector,
   for i in 0..<nSamples:
     dA[i] = 0
   for i in 0..<nSamples:
-    for indices in combNotj(nFeatures+nAugments, degree-order-1, j):
+    for indices in combNotj(nFeatures+nAugments, degree-1, j):
       var prod = 1.0
       for j2 in indices:
         prod *= P[order, s, j2]
@@ -57,20 +61,20 @@ proc computeDerivatives(P: Tensor, X: Matrix, dA: var Vector,
       dA[i] *= X[i, j]
 
 
-proc update[L](P: Tensor, X: Matrix, y: seq[float64], yPred: seq[float64],
-               beta: float64, degree, order, s, j, nAugments: int,
-               loss: L, dA: var Vector): float64 =
+proc computeGrad*[L](P: Tensor, y, yPred: seq[float64], beta: float64,
+                     order, s, j: int, loss: L, dA: var Vector): float64 =
   result = beta * P[order, s, j]
-  let nSamples = X.shape[0]
-  var invStepSize: float64 = 0.0
-  
-  computeDerivatives(P, X, dA, degree, order, s, j, nAugments)
+  let nSamples = dA.shape[0]
   for i in 0..<nSamples:
     result += loss.dloss(y[i], yPred[i]) * dA[i]
-    invStepSize += dA[i]^2
 
-  invStepSize = invStepSize*loss.mu + beta
-  result /= invStepSize
+
+proc computeInvStepSize*[L](beta: float64, loss: L, dA: var Vector): float64 =
+  let nSamples = dA.shape[0]
+  result = 0.0
+  for i in 0..<nSamples:
+    result += dA[i]^2
+  result = result*loss.mu + beta
 
 
 proc epoch[L](X: Matrix, y: seq[float64], yPred: var seq[float64],
@@ -82,16 +86,17 @@ proc epoch[L](X: Matrix, y: seq[float64], yPred: var seq[float64],
   let nComponents = P.shape[1]
   for s in 0..<nComponents:
     for j in 0..<nFeatures+nAugments:
-      let update = update(P, X, y, yPred, beta, degree, order, s, j,
-                          nAugments, loss, dA)
+      computeDerivatives(P, X, dA, degree-order, order, s, j, nAugments)
+      let invStepSize = computeInvStepSize(beta, loss, dA)
+      let update = computeGrad(P, y, yPred, beta, order, s, j, loss, dA) / invStepSize
       P[order, s, j] -= update
       result += abs(update)
       # naive synchronize
       predict(P, w, intercept, X, yPred, degree)
 
 
-proc fit*[L](self: CDSlow, X: Matrix, y: seq[float64],
-             fm: var FMSlow[L]) =
+proc fit*[L](self: CDSlow[L], X: Matrix, y: seq[float64],
+             fm: var FMSlow) =
   fm.init(X)
   let y = fm.checkTarget(y)
   let
@@ -99,13 +104,13 @@ proc fit*[L](self: CDSlow, X: Matrix, y: seq[float64],
     nFeatures = X.shape[1]
     nOrders = fm.P.shape[0]
     degree = fm.degree
-    alpha0 = fm.alpha0 * float(nSamples)
-    alpha = fm.alpha * float(nSamples)
-    beta = fm.beta * float(nSamples)
+    alpha0 = self.alpha0 * float(nSamples)
+    alpha = self.alpha * float(nSamples)
+    beta = self.beta * float(nSamples)
     fitLinear = fm.fitLinear
     fitIntercept = fm.fitIntercept
     nAugments = fm.nAugments
-    loss = fm.loss
+    loss = self.loss
 
   # caches
   var

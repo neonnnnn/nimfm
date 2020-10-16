@@ -6,9 +6,11 @@ factorization machines can leverage them.
 
 We provide codes for some baseline methods [1], factorization machines [2],
 and higher-order factorization machines [3] on the MovieLens 100K dataset.
-Baseline methods implemented in this benchmark are represented as the 
+The baseline methods implemented in this benchmark are represented as the 
 factorization machines by changing input features and
-hyper-parameter setting (see [2]).
+hyperparameter setting (see [2]).
+
+In addition, this benchmark provides factorization machines with sparse regularization [4,5,6,7].
 
 ## Dependencies
  - [zip library in Nim](https://github.com/nim-lang/zip)
@@ -35,19 +37,26 @@ hyper-parameter setting (see [2]).
   regression with user-id and item-id as input. It predicts the rating as
   overall_bias + user_bias + item_bias.
 
-  The rests are for `factorization_machine.nim`, 
-  `factorization_machine_sgd.nim`, `higher_order_factorization_machine.nim`,
-  and `linear_model.nim`. They use not only user-id and item-id but also
-   - age, occupation, sex, and zipcode of user (dimension: 49),
-   - released year and genre of item (dimension: 29).
-
-   For more details about feature encoding, please see [3].
- 
 
 2. Compile other nim files with `-d:release` and `-d:danger`, 
    and run them. For example,
 
    nim c --run -d:release -d:danger matrix_factorization.nim
+
+  `factorization_machine.nim`, 
+  `factorization_machine_sgd.nim`, `factorization_machines_adagrad.nim`, `higher_order_factorization_machine.nim`,
+  and `linear_model.nim` use not only user-id and item-id but also
+   - age, occupation, sex, and zipcode of user (dimension: 49),
+   - released year and genre of item (dimension: 29).
+
+   For more details about feature encoding, please see [3].
+
+   `factorization_machine_stream.nim` and `factorization_machine_sgd_stream.nim` are examples using our binary data format.
+   Before running them, you must run `convert.nim`.
+   It outputs binary versions of `ml-100k_user_item_feature_train.svm` and `ml-100k_user_item_feature_test.svm`.
+
+   `sparse*` provides factorization machines with sparse regularization [4,5,6,7].
+ 
 
 
 ## References
@@ -56,3 +65,11 @@ hyper-parameter setting (see [2]).
 2. S. Rendle. Factorization machines. In ICDM, pp. 995--1000, 2010.
 
 3. M. Blondel, A. Fujino, N. Ueda, M. Ishihata. Higher-order factorization machines. In NeurIPS, pp. 3351--3359, 2016.
+
+4. Z. Pan, E. Chen, Q. Liu, T. Xu, H. Ma, and H. Lin. Sparse factorization machines for click-through rate prediction. In ICDM, pp. 400--409, 2016.
+
+5. J Xu, K Lin, P. N. Tan, and J. Zhou. Synergies that matter: Efficient interaction selection via sparse factorization machine. In SDM, pp. 1008-–0116, 2016.
+
+6. H. Zhao, Q. Yao, J. Li, Y. Song, and D. L. Lee. Meta-graph based recommendation fusion over heterogeneous information networks. In KDD, pp. 635–-644, 2017
+
+7. K. Atarashi, S. Oyama, and M. Kurihara. Factorization machines with regularization for sparse feature interactions. preprint.

@@ -1,4 +1,4 @@
-import loss, kernels, tensor, fm_base
+import ../kernels, ../tensor/tensor, fm_base, ../dataset
 import random, sequtils, strutils, parseutils, typetraits
 
 
@@ -8,15 +8,10 @@ type
     augment = "augment",
     none = "none"
 
-  FactorizationMachineObj*[L] = object
+  FactorizationMachineObj* = object
     task*: TaskKind         ## regression or classification.
     degree*: int            ## Degree of the polynomial.
-    nComponents*: int       ## Number of basis vectors (rank hyper-parameter).
-    alpha0*: float64        ## Regularization strength for intercept.
-    alpha*: float64         ## Regularization strength for linear term.
-    beta*: float64          ## Regularization strength for higher-order weights.
-    loss*: L                ## Loss function. It must has mu: float64 field and 
-                            ## loss/dloss: (float64, float64) -> float64.
+    nComponents*: int       ## Number of basis vectors (rank hyperparameter).
     fitLower*: FitLowerKind ## Whether and how to fit lower-order terms.
                             ##   - explicit: fits a seperate weights for each
                             ##               lower order.
@@ -32,7 +27,7 @@ type
     randomState*: int       ## The seed of the pseudo random number generator.
     scale*: float64         ## The scale (a.k.a std) of Normal distribution for
                             ## initialization of higher-order weights.
-    isInitalized*: bool
+    isInitialized*: bool
     P*: Tensor              ## Weights for the polynomial.
                             ## shape (degree-2 or degree-1 or 1,
                             ##        nComponents,
@@ -42,23 +37,17 @@ type
     w*: Vector              ## Weigths for linear term, shape: (nFeatures)
     intercept*: float64     ## Intercept term.
 
-  FactorizationMachine*[L] = ref FactorizationMachineObj[L]
+  FactorizationMachine* = ref FactorizationMachineObj
 
 
-proc newFactorizationMachine*[L](
-  task: TaskKind, degree = 2, nComponents = 30, alpha0 = 1e-6, alpha = 1e-3,
-  beta = 1e-3, loss: L = newSquared(), fitLower = explicit, 
+proc newFactorizationMachine*(
+  task: TaskKind, degree = 2, nComponents = 30, fitLower = explicit, 
   fitIntercept = true, fitLinear = true, warmStart = false, randomState = 1,
-  scale = 0.01): FactorizationMachine[L] =
+  scale = 0.01): FactorizationMachine =
   ## Create a new FactorizationMachine.
   ## task: classification or regression.
   ## degree: Degree of the polynomial (= the order of feature interactions).
-  ## nComponents: Number of basis vectors (a.k.a rank hyper-parameter).
-  ## alpha0: Regularization strength for intercept.
-  ## alpha: Regularization strength for linear term.
-  ## beta: Regularization strength for higher-order weights.
-  ## loss: Loss function. It must hasve mu: float64 field and
-  ##       loss/dloss proc: (float64, float64)->float64.
+  ## nComponents: Number of basis vectors (rank hyperparameter).
   ## fitLower: Whether and how to fit lower-order terms.
   ##   - explicit: fits a seperate weights for each lower order.
   ##   - augment: adds the dummy feature for each feature vectors and fits\
@@ -79,19 +68,13 @@ proc newFactorizationMachine*[L](
   if nComponents < 1:
     raise newException(ValueError, "nComponents < 1.")
   result.nComponents = nComponents
-  if alpha0 < 0 or alpha < 0 or beta < 0:
-    raise newException(ValueError, "Regularization strength < 0.")
-  result.alpha0 = alpha0
-  result.alpha = alpha
-  result.beta = beta
-  result.loss = loss
   result.fitLower = fitLower
   result.fitIntercept = fitIntercept
   result.fitLinear = fitLinear
   result.warmStart = warmStart
   result.randomState = randomState
   result.scale = scale
-  result.isInitalized = false
+  result.isInitialized = false
   result.lams = ones([result.nComponents])
 
 
@@ -117,8 +100,8 @@ proc nOrders*[FM](self: FM): int =
 proc decisionFunction*[FM, Dataset](self: FM, X: Dataset): seq[float64] =
   ## Returns the model outputs as seq[float64].
   self.checkInitialized()
+
   let nSamples: int = X.nSamples
-  let nFeatures = X.nFeatures
   var A = zeros([nSamples, self.degree+1])
   result = newSeqWith(nSamples, 0.0)
 
@@ -126,21 +109,24 @@ proc decisionFunction*[FM, Dataset](self: FM, X: Dataset): seq[float64] =
   for i in 0..<nSamples:
     result[i] += self.intercept
 
-  var nAugments = self.nAugments
-  if (nAugments + nFeatures != self.P.shape[2]):
+  X.addDummyFeature(1.0, self.nAugments)
+  let nFeatures = X.nFeatures
+  if (nFeatures != self.P.shape[2]):
     raise newException(ValueError, "Invalid nFeatures.")
   for order in 0..<self.nOrders:
     for s in 0..<self.P.shape[1]:
-      anova(X, self.P[order], A, self.degree-order, s, nAugments)
+      anova(X, self.P[order], A, self.degree-order, s)
       for i in 0..<nSamples:
         result[i] += self.lams[s]*A[i, self.degree-order]
+  
+  X.removeDummyFeature(self.nAugments)
 
 
 proc init*[FM, Dataset](self: FM, X: Dataset, force=false) =
   ## Initializes the factorization machine.
   ## self will not be initialized if force=false, fm is already initialized,
   ## and warmStart=true.
-  if force or not (self.warmStart and self.isInitalized):
+  if force or not (self.warmStart and self.isInitialized):
     let nFeatures: int = X.nFeatures
     randomize(self.randomState)
 
@@ -150,10 +136,10 @@ proc init*[FM, Dataset](self: FM, X: Dataset, force=false) =
     self.P = randomNormal([nOrders, self.nComponents, nFeatures+nAugments],
                           scale = self.scale)
     self.intercept = 0.0
-  self.isInitalized = true
+  self.isInitialized = true
 
 
-proc dump*[L](self: FactorizationMachine[L], fname: string) =
+proc dump*(self: FactorizationMachine, fname: string) =
   ## Dumps the fitted factorization machine.
   self.checkInitialized()
   let nComponents = self.P.shape[1]
@@ -163,10 +149,6 @@ proc dump*[L](self: FactorizationMachine[L], fname: string) =
   f.writeLine("nFeatures: ", nFeatures)
   f.writeLine("degree: ", self.degree)
   f.writeLine("nComponents: ", self.nComponents)
-  f.writeLine("alpha0: ", self.alpha0)
-  f.writeLine("alpha: ", self.alpha)
-  f.writeLine("beta: ", self.beta)
-  f.writeLine("loss: ", name(type(self.loss)))
   f.writeLine("fitLower: ", self.fitLower)
   f.writeLine("fitIntercept: ", self.fitIntercept)
   f.writeLine("fitLinear: ", self.fitLinear)
@@ -176,7 +158,7 @@ proc dump*[L](self: FactorizationMachine[L], fname: string) =
   for order in 0..<self.P.shape[0]:
     f.writeLine("P[", order, "]:")
     for s in 0..<nComponents:
-      for j in 0..<nFeatures:
+      for j in 0..<nFeatures+self.nAugments:
         params[j] = self.P[order, s, j]
       f.writeLine(params.join(" "))
   f.writeLine("w:")
@@ -187,8 +169,7 @@ proc dump*[L](self: FactorizationMachine[L], fname: string) =
   f.close()
 
 
-proc load*[L](fm: var FactorizationMachine[L], fname: string, warmStart: bool, 
-              loss: L) =
+proc load*(fm: var FactorizationMachine, fname: string, warmStart: bool) =
   ## Loads the fitted factorization machine.
   new(fm)
   var f: File = open(fname, fmRead)
@@ -197,14 +178,6 @@ proc load*[L](fm: var FactorizationMachine[L], fname: string, warmStart: bool,
   discard parseInt(f.readLine().split(" ")[1], nFeatures, 0)
   discard parseInt(f.readLine().split(" ")[1], fm.degree, 0)
   discard parseInt(f.readLine().split(" ")[1], fm.nComponents, 0)
-  discard parseFloat(f.readLine().split(" ")[1], fm.alpha0, 0)
-  discard parseFloat(f.readLine().split(" ")[1], fm.alpha, 0)
-  discard parseFloat(f.readLine().split(" ")[1], fm.beta, 0)
-  let lossName = f.readLine().split(" ")[1]
-  fm.loss = loss
-  if name(type(loss)) != lossName:
-    echo("Assert: You define ", name(type(loss)), " loss but loaded model ",
-         "used ", lossName, " loss.")
   fm.fitLower = parseEnum[FitLowerKind](f.readLine().split(" ")[1])
   fm.fitIntercept = parseBool(f.readLine().split(" ")[1])
   fm.fitLinear = parseBool(f.readLine().split(" ")[1])
@@ -237,4 +210,4 @@ proc load*[L](fm: var FactorizationMachine[L], fname: string, warmStart: bool,
     fm.w[j] = val
   discard parseFloat(f.readLine().split(" ")[1], fm.intercept, 0)
   f.close()
-  fm.isInitalized = true
+  fm.isInitialized = true

@@ -1,8 +1,8 @@
-import ../dataset, ../tensor, ../kernels, ../extmath, ../utils, ../loss
-import ../convex_factorization_machine
-from ../fm_base import checkTarget, checkInitialized
+import ../dataset, ../tensor/tensor, ../kernels, ../extmath, ../utils
+import ../models/convex_factorization_machine
+from ../models/fm_base import checkTarget, checkInitialized
 import optimizer_base
-import math, strformat, strutils
+import math, strformat, strutils, sugar
 
 type
   Hazan* = ref object of BaseCSCOptimizer
@@ -11,6 +11,7 @@ type
     ## such that trace norm of the interaction weight matrix = eta.
     ## Regularization parameters alpha0, alpha, and beta
     ## in ConvexFactorizationMachine are ignored.
+    eta: float64
     maxIterPower: int
     tolPower: float64
     optimal: bool
@@ -19,10 +20,12 @@ type
 
 
 proc newHazan*(
-  maxIter = 100, verbose = 2, tol = 1e-7, nTol=10, maxIterPower = 1000,
-  tolPower = 1e-7, optimal = true): Hazan =
+  maxIter = 100, eta=1000.0, verbose = 2, tol = 1e-7,
+  nTol=10, maxIterPower = 1000, tolPower = 1e-7, optimal = true): Hazan =
   ## Creates new Hazan for ConvexFactorizationMachine.
   ## maxIter: Maximum number of iteration for alternative optimization.
+  ## eta: Regularization-constraint for the trace norm of
+  ##      the feature interaction matrix.
   ## maxIterPower: Maximum number of iteration for power iteration.
   ## verbose: Whether to print information on optimization processes.
   ## tol: Tolerance hyperparameter for stopping criterion.
@@ -38,12 +41,24 @@ proc newHazan*(
   ##          even when nComponents > maxComponents and replaces 
   ##          the old basis vector whose lam is minimum with the new one.
   result = Hazan(
-    maxIter: maxIter, tol: tol, verbose: verbose, nTol: nTol,
-    maxIterPower: maxIterPower, tolPower: tolPower, optimal: optimal)
+    maxIter: maxIter, eta:eta, tol: tol,
+    verbose: verbose, nTol: nTol, maxIterPower: maxIterPower,
+    tolPower: tolPower, optimal: optimal)
 
 
-proc fit*(self: Hazan, X: CSCDataset, y: seq[float64],
-          cfm: var ConvexFactorizationMachine[Squared]) =
+proc computeStepSize(self: Hazan, K: Matrix, yPredQuad, residual: Vector,
+                     s: int): float64 =
+  if self.optimal:
+    let d = self.eta * K[s] - yPredQuad
+    result = dot(d, residual) / norm(d, 2)^2
+    result = min(max(1e-10, result), 1.0)
+  else:
+    result = 2.0 / (float(self.it)+2.0)
+
+
+proc fit*(self: Hazan, X: ColDataset, y: seq[float64],
+          cfm: ConvexFactorizationMachine,
+          callback: (Hazan, ConvexFactorizationMachine)->void = nil) =
   ## Fits the factorization machine on X and y by coordinate descent.
   cfm.init(X)
   let y = checkTarget(cfm, y)
@@ -76,9 +91,10 @@ proc fit*(self: Hazan, X: CSCDataset, y: seq[float64],
     w = cfm.w[0..<nFeatures]
     resZ = zeros([nFeatures])
     colNormSq = norm(X, p=2, axis=0)
+    colNormSq *= colNormSq
     if fitIntercept: 
       w.add(cfm.intercept)
-      colNormSq.add(1.0)
+      colNormSq.add(float(nSamples))
       resZ.add(0.0)
     colNormSq += 1e-5
 
@@ -87,9 +103,9 @@ proc fit*(self: Hazan, X: CSCDataset, y: seq[float64],
   yPredLinear += cfm.intercept
   for s in 0..<len(cfm.lams):
     if ignoreDiag: 
-      anova(X, cfm.P, cacheK, 2, s, 0)
+      anova(X, cfm.P, cacheK, 2, s)
     else: 
-      poly(X, cfm.P, cacheK, 2, s, 0)
+      poly(X, cfm.P, cacheK, 2, s)
     K[s] = cacheK[0..^1, 2]
     yPredQuad += cfm.lams[s] * K[s]
 
@@ -106,10 +122,8 @@ proc fit*(self: Hazan, X: CSCDataset, y: seq[float64],
 
   # linear map for CG
   proc linearOpCG(w: Vector, result: var Vector) =
-    mvmul(X, w[0..<nFeatures], Xp)
-    if fitIntercept: Xp += w[^1]
+    mvmul(X, w, Xp)
     vmmul(Xp, X, result)
-    if fitIntercept: result[^1] = sum(Xp)
 
   # preconditioner for CG
   proc preconditioner(w: var Vector) = w /= colNormSq
@@ -122,56 +136,50 @@ proc fit*(self: Hazan, X: CSCDataset, y: seq[float64],
   for it in 0..<self.maxIter:
     if not self.optimal and len(cfm.lams) >= cfm.maxComponents:
       break
-    # fit P
+
+    #### fit P ####
     let (_, p) = powerMethod(linearOpPower, nFeatures, self.maxIterPower,
                              tol=self.tolPower)
+    
     # Add or replace? 
     var s = len(cfm.lams)
     if s == cfm.maxComponents: # replace old p
-      s = argmin(cfm.lams) # replace old p whose lambda is minimum
-      yPredQuad -= cfm.lams[s] * K[s]
+      s = argmin(cfm.lams)
       cfm.P[s] = p
+      yPredQuad -= cfm.lams[s] * K[s]
     else: # add new p
       cfm.P.addRow(p)
+      cfm.lams.add(0.0)
+      K.addRow(zeros([nFeatures]))
 
+    # update K, yPredQuad, and residual
     if ignoreDiag: 
-      anova(X, cfm.P, cacheK, 2, s, 0)
+      anova(X, cfm.P, cacheK, 2, s)
     else:
-      poly(X, cfm.P, cacheK, 2, s, 0)
-    
-    if s != len(cfm.lams): # replace old p
-      yPredQuad += cfm.lams[s] * K[s]
-      residual = y - yPredQuad - yPredLinear
-      K[s] = cacheK[0..^1, 2]
-    else:
-      K.addRow(cacheK[0..^1, 2]) # add new p
-    
-    # compute stepsize
-    if self.optimal:
-      let d = cfm.eta * K[s] - yPredQuad
-      stepsize = dot(d, residual) / norm(d, 2)^2
-      stepsize = min(max(1e-10, stepsize), 1.0)
-    else:
-      stepsize = 2.0 / (float(self.it)+2.0)
-    # update lams
-    if len(cfm.lams) != 0 and sum(cfm.lams) + cfm.eta * stepsize > cfm.eta:
-      yPredQuad *= cfm.eta * (1.0 - stepsize) / sum(cfm.lams)
-      cfm.lams *= cfm.eta * (1.0 - stepsize) / sum(cfm.lams)
-    if s == len(cfm.lams):
-      cfm.lams.add(cfm.eta*stepsize)
-    else:
-      cfm.lams[s] += cfm.eta*stepsize
+      poly(X, cfm.P, cacheK, 2, s)
+    K[s] = cacheK[0..^1, 2]
+    yPredQuad += cfm.lams[s] * K[s]
+    residual = y - yPredQuad - yPredLinear
 
-    # update predictions
-    yPredQuad += cfm.eta * stepsize * K[s]
+    # compute stepsize and update lams/yPredQuad
+    stepsize = computeStepSize(self, K, yPredQuad, residual, s)
+    cfm.lams *= (1 - stepsize)
+    yPredQuad *= (1 - stepsize)
+    cfm.lams[s] += self.eta * stepsize
+    yPredQuad += self.eta * stepsize * K[s]
 
-    # fit w
+    # re-scale
+    if sum(cfm.lams) > self.eta:
+      yPredQuad *= self.eta  / sum(cfm.lams)
+      cfm.lams *= self.eta  / sum(cfm.lams)
+
+    #### fit linear and intercept ####
     residual = y - yPredQuad
     if fitLinear:
-      # optimize w by conjugate gradient
-      resZ[0..<nFeatures] = vmmul(residual, X)
       if fitIntercept:
-        resZ[^1] = sum(residual)
+        X.addDummyFeature(1.0, 1)
+      # optimize w by conjugate gradient
+      vmmul(residual, X, resZ)
       let maggrad = norm(resZ, 1)
       let tolCG = 1e-5 * maggrad
       w *= colNormSq # since we use left and right preconditioning
@@ -179,21 +187,24 @@ proc fit*(self: Hazan, X: CSCDataset, y: seq[float64],
          init=false, tol=tolCG)
       # substitute and update prediction
       cfm.w = w[0..<nFeatures]
-      mvmul(X, cfm.w, yPredLinear)
+      mvmul(X, w, yPredLinear)
       if fitIntercept:
+        X.removeDummyFeature(1)
         cfm.intercept = w[^1]
-        yPredLinear += cfm.intercept
     elif fitIntercept:
       cfm.intercept = sum(residual) / float(nSamples)
       yPredLinear[0..<nSamples] = cfm.intercept
-
+    
+    if not callback.isNil:
+      callback(self, cfm)
     # stopping criterion
     residual = y - yPredQuad - yPredLinear
     lossNew = norm(residual, 2)^2  / float(nSamples)
     if self.verbose > 0:
       let epochAligned = align($(self.it), len($self.maxIter))
       stdout.write(fmt"Epoch: {epochAligned}")
-      stdout.write(fmt"   MSE: {lossNew:1.4e}")
+      stdout.write(fmt"   MSE/2: {lossNew/2.0:1.4e}")
+      stdout.write(fmt"   Trace Norm: {norm(cfm.lams, 1):1.4e}")
       stdout.write("\n")
     
     if lossOld - lossNew < self.tol:

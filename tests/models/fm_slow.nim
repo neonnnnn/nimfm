@@ -1,26 +1,27 @@
-import nimfm/loss, nimfm/tensor, nimfm/metrics, nimfm/factorization_machine
-import nimfm/fm_base
+import nimfm/tensor/tensor, nimfm/metrics
+import nimfm/models/fm_base
+from nimfm/models/factorization_machine 
+  import FactorizationMachineObj, FitLowerKind, nAugments, nOrders
 import sugar, random, sequtils, math
-import utils
+import ../comb
 
 export nAugments
 
 
 type
-  FMSlow*[L] = ref FactorizationMachineObj[L]
+  FMSlow* = ref FactorizationMachineObj
 
   NotFittedError = object of Exception
 
 
 proc checkInitialized*(self: FMSlow) =
-  if not self.isInitalized:
+  if not self.isInitialized:
     raise newException(NotFittedError, "Factorization machines is not fitted.")
 
 
-proc newFMSlow*[L](task: TaskKind, degree = 2, n_components = 30, alpha0 = 1e-6,
-                   alpha = 1e-3, beta = 1e-3, loss: L = newSquared(),
-                   fitLower = explicit, fitIntercept = true, fitLinear = true,
-                   warmStart = false, randomState = 1, scale = 0.01): FMSlow[L] =
+proc newFMSlow*(task: TaskKind, degree = 2, n_components = 30,
+                fitLower = explicit, fitIntercept = true, fitLinear = true,
+                warmStart = false, randomState = 1, scale = 0.01): FMSlow =
   new(result)
   result.task = task
   if degree < 1:
@@ -29,22 +30,16 @@ proc newFMSlow*[L](task: TaskKind, degree = 2, n_components = 30, alpha0 = 1e-6,
   if n_components < 1:
     raise newException(ValueError, "nComponents < 1.")
   result.n_components = n_components
-  if alpha0 < 0 or alpha < 0 or beta < 0:
-    raise newException(ValueError, "Regularization strength < 0.")
-  result.alpha0 = alpha0
-  result.alpha = alpha
-  result.beta = beta
-  result.loss = loss
   result.fitLower = fitLower
   result.fitIntercept = fitIntercept
   result.fitLinear = fitLinear
   result.warmStart = warmStart
   result.randomState = randomState
   result.scale = scale
-  result.isInitalized = false
+  result.isInitialized = false
 
 
-proc decisionFunction*[L](self: FMSlow[L], X: Matrix): seq[float64] =
+proc decisionFunction*(self: FMSlow, X: Matrix): seq[float64] =
   self.checkInitialized()
   let nSamples: int = X.shape[0]
   let nComponents: int = self.nComponents
@@ -72,12 +67,12 @@ proc decisionFunction*[L](self: FMSlow[L], X: Matrix): seq[float64] =
         result[i] += anova
 
 
-proc predict*[L](self: FMSlow[L], X: Matrix): seq[int] =
+proc predict*(self: FMSlow, X: Matrix): seq[int] =
   result = decisionFunction(self, X).map(x=>sgn(x))
 
 
-proc init*[L](self: FMSlow[L], X: Matrix) =
-  if not (self.warmStart and self.isInitalized):
+proc init*(self: FMSlow, X: Matrix) =
+  if not (self.warmStart and self.isInitialized):
     let nFeatures: int = X.shape[1]
     randomize(self.randomState)
 
@@ -87,10 +82,10 @@ proc init*[L](self: FMSlow[L], X: Matrix) =
     self.P = randomNormal([nOrders, self.nComponents, nFeatures+nAugments],
                            scale = self.scale)
     self.intercept = 0.0
-  self.isInitalized = true
+  self.isInitialized = true
 
 
-proc checkTarget*[L](self: FMSlow[L], y: seq[SomeNumber]): seq[float64] =
+proc checkTarget*(self: FMSlow, y: seq[SomeNumber]): seq[float64] =
   case self.task
   of classification:
     result = y.map(x => float(sgn(x)))
@@ -98,7 +93,7 @@ proc checkTarget*[L](self: FMSlow[L], y: seq[SomeNumber]): seq[float64] =
     result = y.map(x => float(x))
 
 
-proc score*[L](self: FMSlow[L], X: Matrix, y: seq[float64]): float64 =
+proc score*(self: FMSlow, X: Matrix, y: seq[float64]): float64 =
   let yPred = self.decisionFunction(X)
   case self.task
   of regression:

@@ -1,35 +1,28 @@
-import nimfm/loss, nimfm/tensor, nimfm/metrics, nimfm/convex_factorization_machine
-import nimfm/fm_base
+import nimfm/tensor/tensor, nimfm/metrics
+import nimfm/models/fm_base, nimfm/models/convex_factorization_machine
 import sugar, sequtils, math
 
 
 type
-  CFMSlow*[L] = ref ConvexFactorizationMachineObj[L]
+  CFMSlow* = ref ConvexFactorizationMachineObj
 
 
-proc newCFMSlow*[L](
-  task: TaskKind, maxComponents = 30, alpha0 = 1e-6, alpha = 1e-3,
-  beta = 1e-5, eta=1000.0, loss: L = newSquared(), fitIntercept = true, fitLinear = true,
-  ignoreDiag=true, warmStart = false): CFMSlow[L] =
+proc newCFMSlow*(
+  task: TaskKind, maxComponents = 30,
+  fitIntercept = true, fitLinear = true,
+  ignoreDiag=true, warmStart = false): CFMSlow =
   new(result)
   result.task = task
   result.degree = 2
   if maxComponents < 1:
     raise newException(ValueError, "maxComponents < 1.")
   result.maxComponents = maxComponents
-  if alpha0 < 0 or alpha < 0 or beta < 0:
-    raise newException(ValueError, "Regularization strength < 0.")
-  result.alpha0 = alpha0
-  result.alpha = alpha
-  result.beta = beta
-  result.eta = eta
-  result.loss = loss
   result.fitIntercept = fitIntercept
   result.fitLinear = fitLinear
   result.ignoreDiag = ignoreDiag
   result.warmStart = warmStart
   result.degree = 2
-  result.isInitalized = false
+  result.isInitialized = false
   result.lams = zeros([maxComponents])
 
 
@@ -37,12 +30,12 @@ proc init*(self: CFMSlow, X: Matrix, force=false) =
   ## Initializes the factorization machine.
   ## If force=false, fm is already initialized, and warmStart=true,
   ## fm will not be initialized.
-  if force or not (self.warmStart and self.isInitalized):
+  if force or not (self.warmStart and self.isInitialized):
     let nFeatures: int = X.shape[1]
     self.w = zeros([nFeatures])
     self.P = zeros([self.maxComponents, nFeatures])
     self.intercept = 0.0
-  self.isInitalized = true
+  self.isInitialized = true
 
 
 proc decisionFunction*(self: CFMSlow, X: Matrix): seq[float64] =

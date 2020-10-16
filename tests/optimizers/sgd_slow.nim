@@ -1,10 +1,11 @@
-import nimfm/tensor
+import nimfm/tensor/tensor, nimfm/loss
 import nimfm/optimizers/optimizer_base, nimfm/optimizers/sgd
 import sequtils, math, random
-import kernels_slow, fm_slow, utils
+import ../kernels_slow, ../models/fm_slow, ../comb
 
 type
-  SGDSlow* = ref object of BaseCSROptimizer
+  SGDSlow*[L] = ref object of BaseCSROptimizer
+    loss: L
     eta0: float64
     scheduling: SchedulingKind
     power: float64
@@ -12,11 +13,14 @@ type
     shuffle: bool
 
 
-proc newSGDSlow*(eta0 = 0.01, scheduling = optimal, power = 1.0, maxIter = 100,
-                 verbose = 1, tol = 1e-3, shuffle = true): SGDSlow =
-  result = SGDSlow(eta0: eta0, scheduling: scheduling, power: power, it: 1,
-                   maxIter: maxIter, tol: tol, verbose: verbose,
-                   shuffle: shuffle)
+proc newSGDSlow*[L](eta0 = 0.01, alpha0=1e-6, alpha=1e-3, beta=1e-3,
+                    loss: L = newSquared(),scheduling = optimal, power = 1.0,
+                    maxIter = 100, verbose = 1, tol = 1e-3,
+                    shuffle = true): SGDSlow[L] =
+  result = SGDSlow[L](eta0: eta0, alpha0: alpha0, alpha: alpha, beta: beta,
+                      loss: loss, scheduling: scheduling, power: power, it: 1,
+                      maxIter: maxIter, tol: tol, verbose: verbose,
+                      shuffle: shuffle)
 
 
 proc getEta(self: SGDSlow, reg: float64): float64 {.inline.} =
@@ -33,8 +37,8 @@ proc getEta(self: SGDSlow, reg: float64): float64 {.inline.} =
 
 # compute derivatives naively
 # dA/dpj =  anova_without_j  * xj
-proc computeDerivatives(P: Tensor, X: Matrix, dA: var Tensor,
-                        i, degree, order, nAugments: int) =
+proc computeDerivatives*(P: Tensor, X: Matrix, dA: var Tensor,
+                         i, degree, order, nAugments: int) =
   let
     nFeatures = X.shape[1]
     nComponents = P.shape[1]
@@ -53,8 +57,8 @@ proc computeDerivatives(P: Tensor, X: Matrix, dA: var Tensor,
         dA[order, s, j] *= X[i, j]
   
 
-proc computeAnovaGrad(P: Tensor, X: Matrix, i, degree, order, nAugments: int,
-                      dA: var Tensor): float64 =
+proc computeAnovaGrad*(P: Tensor, X: Matrix, i, degree, order, nAugments: int,
+                       dA: var Tensor): float64 =
   result = 0.0
   let
     nComponents = P.shape[1]
@@ -67,7 +71,7 @@ proc computeAnovaGrad(P: Tensor, X: Matrix, i, degree, order, nAugments: int,
   computeDerivatives(P, X, dA, i, degree, order, nAugments)
 
 
-proc fit*[L](self: SGDSlow, X: Matrix, y: seq[float64], fm: var FMSlow[L]) =
+proc fit*[L](self: SGDSlow[L], X: Matrix, y: seq[float64], fm: var FMSlow) =
   fm.init(X)
   let y = fm.checkTarget(y)
   let
@@ -76,13 +80,13 @@ proc fit*[L](self: SGDSlow, X: Matrix, y: seq[float64], fm: var FMSlow[L]) =
     nComponents = fm.P.shape[1]
     nOrders = fm.P.shape[0]
     degree = fm.degree
-    alpha0 = fm.alpha0
-    alpha = fm.alpha
-    beta = fm.beta
+    alpha0 = self.alpha0
+    alpha = self.alpha
+    beta = self.beta
     fitLinear = fm.fitLinear
     fitIntercept = fm.fitIntercept
     nAugments = fm.nAugments
-    loss = fm.loss
+    loss = self.loss
   var
     indices = toSeq(0..<nSamples)
     dA: Tensor = zeros(fm.P.shape)
@@ -93,31 +97,30 @@ proc fit*[L](self: SGDSlow, X: Matrix, y: seq[float64], fm: var FMSlow[L]) =
     var runningLoss = 0.0
     if self.shuffle: shuffle(indices)
     for i in indices:
-      let wEta = self.getEta(alpha)
-      let PEta = self.getEta(beta)
+      # compute prediction and gradient
       var yPred = fm.intercept
       for j in 0..<nFeatures:
         yPred += fm.w[j] * X[i, j]
 
       for order in 0..<nOrders:
-        yPred += computeAnovaGrad(fm.P, X, i, degree-order, order, 
-                                  nAugments, dA)
+        yPred += computeAnovaGrad(fm.P, X, i, degree-order, order, nAugments,
+                                  dA)
       runningLoss += loss.loss(y[i], yPred)
-      # update parameters
       let dL = loss.dloss(y[i], yPred)
 
+      # update parameters
+      let wEta = self.getEta(alpha)
+      let PEta = self.getEta(beta)
       if fitIntercept:
         let update = self.getEta(alpha0) * (dL + alpha0 * fm.intercept)
         fm.intercept -= update
 
       if fitLinear:
-        # update for regularization
         for j in 0..<nFeatures:
           let update = wEta * (dL * X[i, j] + alpha * fm.w[j])
           fm.w[j] -= update  
     
       for order in 0..<nOrders:
-        # update for regularization
         for s in 0..<nComponents:
           for j in 0..<(nFeatures+nAugments):
             let update =  PEta * (dL * dA[order, s, j] + beta * fm.P[order, s, j])

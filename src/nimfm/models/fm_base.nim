@@ -1,5 +1,5 @@
-import sequtils, math, sugar, utils
-import metrics
+import sequtils, math, sugar
+import ../metrics, ../utils
 
 
 type
@@ -11,7 +11,7 @@ type
 
 
 proc checkInitialized*[FM](self: FM) =
-  if not self.isInitalized:
+  if not self.isInitialized:
     raise newException(NotFittedError, "Factorization machines is not fitted.")
 
 
