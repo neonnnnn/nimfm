@@ -52,7 +52,6 @@ proc finalize*(sfm: FactorizationMachine, params: Params) =
   sfm.intercept = params.intercept
 
 
-
 proc predictAll*(X: RowDataset, yPred: var Vector, params: Params,
                  A: var Matrix, degree, nAugments: int) =
   let nSamples = X.nSamples
@@ -113,10 +112,10 @@ proc linesearch*[L, R](X: RowDataset, y: seq[float64], yPred: var Vector,
                        maxSearch: int): (float64, float64) =
   var eta = etaInit
   var it: int = 0
-  var oldLoss = 0.0
+  var oldLossVal = 0.0
   for i in 0..<X.nSamples:
-    oldLoss += loss.loss(y[i], yPred[i])
-  oldLoss /= float(X.nSamples)
+    oldLossVal += loss.loss(y[i], yPred[i])
+  oldLossVal /= float(X.nSamples)
   
   while it < maxSearch or maxSearch <= 0:
     # graident step
@@ -137,7 +136,7 @@ proc linesearch*[L, R](X: RowDataset, y: seq[float64], yPred: var Vector,
     var cond = dot(params, grads) - dot(old_params, grads)
     cond += 0.5 * computeViol(params, old_params) / eta
     # stop?
-    if (result[0] - oldLoss) <= sigma * cond or eta < 1e-12:
+    if (result[0] - oldLossVal) <= sigma * cond or eta < 1e-12:
       break
     eta *= rho
     inc(it)

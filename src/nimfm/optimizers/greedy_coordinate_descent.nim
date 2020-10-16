@@ -325,16 +325,16 @@ proc fitZ[L](self: GreedyCD, X: ColDataset, y: seq[float64],
   var nComponents = 0
   let nSamples = X.nSamples
   let nFeatures = X.nFeatures
-  var lossOld = 0.0
+  var oldLossVal = 0.0
   var addBase = false
   var dL = zeros([nSamples])
   var Xp = zeros([nSamples])
   var cache = zeros([nSamples])
   nComponents = int(norm(lams, 0))
   for i in 0..<nSamples:
-    lossOld += loss.loss(y[i], yPred[i])
-  lossOld += beta * norm(lams, 1)
-  lossOld /= float(nSamples)
+    oldLossVal += loss.loss(y[i], yPred[i])
+  oldLossVal += beta * norm(lams, 1)
+  oldLossVal /= float(nSamples)
   
   proc linearOpPower(p: Vector, result: var Vector) =
     mvmul(X, p, Xp)
@@ -392,25 +392,25 @@ proc fitZ[L](self: GreedyCD, X: ColDataset, y: seq[float64],
     # if basis is changed or refitted
     if addBase or (it+1) mod self.nRefitting == 0 or it == self.maxIterInner-1:
       # compute objective for stopping criterion
-      var lossNew = norm(lams, 1) * beta
+      var newLossVal = norm(lams, 1) * beta
       for i in 0..<nSamples:
-        lossNew += loss.loss(y[i], yPred[i])
-      lossNew /= float(nSamples)
+        newLossVal += loss.loss(y[i], yPred[i])
+      newLossVal /= float(nSamples)
       
       if verbose > 1:
         let iterAligned =  align($(it+1), len($self.maxIterInner))
         stdout.write(fmt"   Iteration: {iterAligned}")
-        stdout.write(fmt"   Objective: {lossNew:1.4e}")
-        stdout.write(fmt"   Decreasing: {lossOld - lossNew:1.4e}")
+        stdout.write(fmt"   Objective: {newLossVal:1.4e}")
+        stdout.write(fmt"   Decreasing: {oldLossVal - newLossVal:1.4e}")
         stdout.write("\n")
         stdout.flushFile()
 
       # Stopping criterion
-      if abs(lossNew - lossOld) < self.tol:
+      if abs(newLossVal - oldLossVal) < self.tol:
         if verbose > 1:
           echo("   Converged at iteration ", it+1, ".")
         break
-      lossOld = lossNew
+      oldLossVal = newLossVal
   
 
 proc fit*[L](self: GreedyCD[L], X: ColDataset, y: seq[float64],
@@ -435,7 +435,7 @@ proc fit*[L](self: GreedyCD[L], X: ColDataset, y: seq[float64],
     K: Matrix = zeros([len(cfm.lams), nSamples])
     colNormSq: Vector
     isConverged = false
-    lossOld, lossNew, regOld, regNew: float64
+    oldLossVal, newLossVal, oldRegVal, newRegVal: float64
 
   # init caches
   cacheK[0..^1, 0] = 1.0
@@ -453,9 +453,9 @@ proc fit*[L](self: GreedyCD[L], X: ColDataset, y: seq[float64],
     yPred += cfm.lams[s] * K[s]
   
   # compute loss
-  (lossOld, regOld) = objective(y, yPred, cfm.P, cfm.w, cfm.intercept,
-                                self.alpha0, self.alpha, 0, self.loss)
-  regOld += self.beta * norm(cfm.lams, 1) # trace norm
+  (oldLossVal, oldRegVal) = objective(y, yPred, cfm.P, cfm.w, cfm.intercept,
+                                      self.alpha0, self.alpha, 0, self.loss)
+  oldRegVal += self.beta * norm(cfm.lams, 1) # trace norm
 
   # start iteration
   for it in 0..<self.maxIter:
@@ -472,22 +472,22 @@ proc fit*[L](self: GreedyCD[L], X: ColDataset, y: seq[float64],
     fitZ(self, X, y, yPred, cfm.P, cfm.lams, beta, self.loss, cacheK,
          K, maxComponents, self.verbose, cfm.ignoreDiag)
     
-    (lossNew, regNew) = objective(y, yPred, cfm.P, cfm.w, cfm.intercept,
-                                  self.alpha0, self.alpha, 0, self.loss)
-    regNew += self.beta * norm(cfm.lams, 1)
+    (newLossVal, newRegVal) = objective(y, yPred, cfm.P, cfm.w, cfm.intercept,
+                                        self.alpha0, self.alpha, 0, self.loss)
+    newRegVal += self.beta * norm(cfm.lams, 1)
     
     if not callback.isNil:
       callback(self, cfm)
     if self.verbose > 0:
-      stdout.write(fmt"   Whole Objective: {lossNew+regNew:1.4e}")
+      stdout.write(fmt"   Whole Objective: {newLossVal+newRegVal:1.4e}")
       stdout.write("\n")
-    if abs(lossNew + regNew - lossOld - regNew) < self.tol:
+    if abs(newLossVal + newRegVal - oldLossVal - oldRegVal) < self.tol:
       if self.verbose > 0:
         echo("Converged at iteration ", it+1, ".")
       isConverged = true
       break
-    lossOld = lossNew
-    regOld = regNew
+    oldLossVal = newLossVal
+    oldRegVal = newRegVal
 
     # Re-compute predictons for next iter (in O(nnz(X)k))
     if it < self.maxIter - 1:

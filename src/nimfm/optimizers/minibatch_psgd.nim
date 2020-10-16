@@ -178,7 +178,7 @@ proc fit*[L, R](self: MBPSGD[L, R], X: RowDataset, y: seq[float64],
     echo("Number of inner iteration: ", maxIterInner)
     echoHeader(self.maxIter, viol=false)
   
-  var old_lossVal = Inf
+  var oldLossVal = Inf
   for it in 0..<self.maxIter:
     # perform inner loop
     let runningLoss = epoch(self, X, y, params, grads, A, dA, indices, degree,
@@ -199,12 +199,12 @@ proc fit*[L, R](self: MBPSGD[L, R], X: RowDataset, y: seq[float64],
         regVal += self.gamma * self.reg.eval(P[order], sfm.degree-order)
       echoInfo(it+1, self.maxIter, -1, runningLoss, regVal)
     
-    if abs(old_lossVal - runningLoss) < self.tol:
+    if abs(oldLossVal - runningLoss) < self.tol:
       if self.verbose > 0: echo("Converged at epoch ", it+1, ".")
       isConverged = true
       break
 
-    old_lossVal = runningLoss
+    oldLossVal = runningLoss
 
   if not isConverged and self.verbose > 0:
     echo("Objective did not converge. Increase maxIter.")
