@@ -1,10 +1,8 @@
-# For end users
-
 import nimfm/modules
-export modules
 import strutils, sugar, sequtils, math, tables, strformat
 
 
+# The followings are for end users
 proc echoDataInfo[T](X: BaseDataset[T]) =
   echo("   Number of samples  : ", X.nSamples)
   echo("   Number of features : ", X.nFeatures)
@@ -13,7 +11,7 @@ proc echoDataInfo[T](X: BaseDataset[T]) =
   echo("   Minimum value      : ", X.min)
 
 
-proc eval(fm: FactorizationMachine, task: TaskKind, test: string,
+proc eval(fm: ConvexFactorizationMachine, task: TaskKind, test: string,
           predict: string, nFeatures: int, verbose: int) =
   var X: CSRDataset
   var y: seq[float64]
@@ -24,7 +22,6 @@ proc eval(fm: FactorizationMachine, task: TaskKind, test: string,
   case task
   of regression:
     echo("Test RMSE: ", rmse(y, yPred))
-    echo(fm.score(X, y))
   of classification:
     echo("Test Accuracy: ",
          accuracy(y.map(x=>sgn(x)), yPred.map(x=>sgn(x))))
@@ -35,84 +32,84 @@ proc eval(fm: FactorizationMachine, task: TaskKind, test: string,
     f.close()
 
 
-proc trainInner[L](fm: var FactorizationMachine, train: string,
-                   alpha0 = 1e-7, alpha = 1e-5, beta = 1e-5,
-                   loss: L=newSquared(), solver = "cd", maxIter = 100,
-                   tol = 1e-5, eta0 = 0.1, scheduling = optimal, power = 1.0,
-                   nFeatures = -1, verbose = 1) =
+proc trainInner[L](cfm: var ConvexFactorizationMachine, train: string,
+                   alpha0 = 1e-7, alpha = 1e-5, beta = 1e-5, eta=1000.0,
+                   loss: L=newSquared(), solver = "gcd", maxIter = 100,
+                   tol = 1e-5, maxIterPower=100, maxIterInner=10,
+                   nRefitting=10, refitFully=false, sigma=1e-4,
+                   maxIterADMM=100, optimal=true, nFeatures = -1,
+                   verbose = 1) =
   ## training a factorization machine
+  var X: CSCDataset
+  var y: seq[float64]
+  loadSVMLightFile(train, X, y, nFeatures)
+  if verbose > 0: echoDataInfo(X)
+
   case solver
-    of "cd", "als":
-      var X: CSCDataset
-      var y: seq[float64]
-      loadSVMLightFile(train, X, y, nFeatures)
+    of "gcd":
+      var optim: GreedyCD[L] = newGreedyCD(
+        maxIter=maxIter, alpha0=alpha0, alpha=alpha, beta=beta, loss=loss,
+        maxIterPower=maxIterPower, nRefitting=nRefitting, refitFully=refitFully,
+        sigma=sigma, maxIterADMM=maxIterADMM, verbose=verbose, tol=tol)
+      optim.fit(X, y, cfm)
+    of "hazan":
       if verbose > 0: echoDataInfo(X)
-      var optim: CD[L] = newCD(maxIter=maxIter, alpha0=alpha0, alpha=alpha,
-                               beta=beta, loss=loss, verbose=verbose, tol=tol)
-      optim.fit(X, y, fm)
-    of "sgd":
-      var X: CSRDataset
-      var y: seq[float64]
-      loadSVMLightFile(train, X, y, nFeatures)
-      if verbose > 0: echoDataInfo(X)
-      var optim = newSGD(maxIter, eta0, alpha0, alpha, beta, loss, scheduling,
-                         power, verbose, tol)
-      optim.fit(X, y, fm)
-    of "adagrad":
-      var X: CSRDataset
-      var y: seq[float64]
-      loadSVMLightFile(train, X, y, nFeatures)
-      if verbose > 0: echoDataInfo(X)
-      var optim = newAdaGrad(maxIter, eta0, alpha0, alpha, beta, loss,
-                             verbose=verbose, tol=tol)
-      optim.fit(X, y, fm)
+      var optim = newHazan(maxIter, eta=eta, maxIterPower=maxIterPower,
+                           optimal=optimal, verbose=verbose, tol=tol)
+      optim.fit(X, y, cfm)
     else:
       raise newException(ValueError, "Solver " & solver & " is not supported")
 
 
-proc train(task: TaskKind, train: string, test = "", degree = 2,
-           nComponents = 30, alpha0 = 1e-7, alpha = 1e-5, beta = 1e-3,
-           loss="squared", fitLower = explicit, fitLinear = true,
-           fitIntercept = true, scale = 0.1, randomState = 1,
-           solver = "cd", maxIter = 100, tol = 1e-5, eta0 = 0.1,
-           scheduling = optimal, power = 1.0, threshold=0.1,
-           dump = "", load = "", predict = "", nFeatures = -1, verbose = 1) =
-  ## training a factorization machine
-  var fm: FactorizationMachine
+proc train(task: TaskKind, train: string, test = "",
+           maxComponents = 30, alpha0 = 1e-7, alpha = 1e-5, beta = 1e-5,
+           eta=1000.0, loss="squared",fitLinear = true,
+           fitIntercept = true, ignoreDiag=false, solver = "gcd",
+           maxIter = 100, tol = 1e-5,
+           maxIterPower=100, maxIterInner=10, nRefitting=10, 
+           refitFully=false, sigma=1e-4, maxIterADMM=100, optimal=true, 
+           threshold=0.1, dump = "", load = "", predict = "",
+           nFeatures = -1, verbose = 1) =
+  ## training a convex factorization machine
+  var cfm: ConvexFactorizationMachine
   if load == "":
-    fm = newFactorizationMachine(
-      task = task, degree = degree, nComponents = nComponents,
-      fitLower = fitLower, fitIntercept = fitIntercept, fitLinear = fitLinear,
-      warmStart = false, randomState = randomState, scale = scale
+    cfm = newConvexFactorizationMachine(
+      task = task, maxComponents = maxComponents, ignoreDiag = ignoreDiag,
+      fitIntercept = fitIntercept, fitLinear = fitLinear,
+      warmStart = false
     )
   else:
-    load(fm, load, true)
-
+    load(cfm, load, true)
   case loss
     of "squared":
-      trainInner(fm, train, alpha0, alpha, beta, newSquared(), solver, maxIter,
-                 tol, eta0, scheduling, power, nFeatures, verbose)
+      trainInner(cfm, train, alpha0, alpha, beta, eta,
+                newSquared(), solver, maxIter, tol, maxIterPower, maxIterInner, nRefitting,
+                refitFully, sigma, maxIterADMM, optimal, nFeatures, verbose)
     of "huber":
-      trainInner(fm, train, alpha0, alpha, beta, newHuber(threshold), solver,
-                 maxIter, tol, eta0, scheduling, power, nFeatures, verbose)
-    of "squared_hinge": 
-      trainInner(fm, train, alpha0, alpha, beta, newSquaredHinge(), solver, maxIter,
-                 tol, eta0, scheduling, power, nFeatures, verbose)
+      trainInner(cfm, train, alpha0, alpha, beta, eta,
+                newHuber(threshold), solver, maxIter, tol, maxIterPower, maxIterInner, nRefitting,
+                refitFully, sigma, maxIterADMM, optimal, nFeatures, verbose)
+    of "squared_hinge":
+      trainInner(cfm, train, alpha0, alpha, beta, eta,
+                newSquaredHinge(), solver, maxIter, tol, maxIterPower, maxIterInner, nRefitting,
+                refitFully, sigma, maxIterADMM, optimal, nFeatures, verbose)
     of "logistic":
-      trainInner(fm, train, alpha0, alpha, beta, newLogistic(), solver, maxIter,
-                 tol, eta0, scheduling, power, nFeatures, verbose)
+      trainInner(cfm, train, alpha0, alpha, beta, eta, newLogistic(), solver,
+                 maxIter, tol, maxIterPower, maxIterInner,
+                 nRefitting, refitFully, sigma, maxIterADMM, optimal,
+                 nFeatures, verbose)
     else:
       raise newException(ValueError, fmt"loss {loss} is not supported")
   
-  if test != "": eval(fm, task, test, predict, nFeatures, verbose)
+  if test != "": eval(cfm, task, test, predict, nFeatures, verbose)
 
-  if dump != "": fm.dump(dump)
+  if dump != "": cfm.dump(dump)
 
 
 proc testInner[L](task: TaskKind, test, load: string, dump = "", 
                   loss: L = newSquared(), predict = "", nFeatures = -1,
                   verbose = 1) =
-  var fm: FactorizationMachine
+  var fm: ConvexFactorizationMachine
   load(fm, load, false)
   eval(fm, task, test, predict, nFeatures, verbose)
   if dump != "": fm.dump(dump)
@@ -120,7 +117,6 @@ proc testInner[L](task: TaskKind, test, load: string, dump = "",
 
 proc test(task: TaskKind, test, load: string, dump = "",  loss="squared", 
           predict = "", nFeatures = -1, verbose = 1) =
-  ## test a factorization machine
   case loss
     of "squared":
       testInner(task, test, load, dump, newSquared(), predict, nFeatures, verbose)
@@ -142,7 +138,7 @@ when isMainModule:
   {.push hint[GlobalVar]: off.}
   const nimbleFile = staticRead "../nimfm.nimble"
   clCfg.version = nimbleFile.fromNimble("version")
-  let docLine = nimbleFile.fromNimble("description") & "\n\n"
+  let docLine = "nimfm for convex FMs.\n\n"
   let topLvlUse = """${doc}Usage:
   $command {SUBCMD}  [sub-command options & parameters]
 
@@ -162,27 +158,26 @@ Run "$command help" to get *comprehensive* help.$ifVersion"""
      "task": "r for regression and c for binary classification",
      "train": "Filename of training data (libsvm/svmlight format)",
      "test": "Filename of test data (libsvm/svmlight format)",
-     "degree": "Degree of the polynomial (order of feature interactions)",
-     "n-components": "Number of basis vectors (rank hyperparameter)",
+     "max-components": "Maximum number of basis vectors (rank hyperparameter)",
      "alpha0": "Regularization-strength for intercept (bias) term",
      "alpha": "Regularization sterngth for linear term",
-     "beta": "Regularization-strength for interaction term",
+     "beta": "Regularization-strength for interaction term (gcd)",
+     "eta": "Regularization-constraint for interaction term (hazan)",
      "loss": "Optimized loss function, squared, huber, squared_hinge, " &
              "logistic, or huber",
-     "fit-lower": "Whether and how to fit lower-order terms. " &
-                  "explicit, augment, or none",
      "fit-linear": "Whether to fit linear term or not (0 or 1)",
      "fit-intercept": "Whether to fit intercept term or not (0 or 1)",
-     "scale": "Standard derivation for initialization of interaction weights",
-     "random-state": "Seed od the pseudo random number generator. " &
-                     "0 is not allowed",
-     "solver": "Optimization method, cd, als (they are same), sgd, or adagrad",
+     "ignoreDiag": "Whether to use interactions from same features (e.g, x1^2) or not",
+     "solver": "Optimization method, gcd or hazan",
      "maxIter": "Maximum number of optimization iteration (epoch)",
      "tol": "Tolerance for stopping criterion",
-     "eta0": "Step-size parameter for sgd",
-     "scheduling": "Step-size scheduling method for sgd. " &
-                   "optimal, constant, pegasos, or invscaling",
-     "power": "Hyperparameter for step-size scheduling",
+     "maxIterPower": "Maximum number of iteration in power method",
+     "maxIterInner": "Maximum number of innner iteration (gcd)",
+     "nRefitting": "Frequency of the refitting lams and P in inner loop (gcd)",
+     "refitFully": "Whether to refit both P and lams or only lams (0 or 1)",
+     "sigma": "Parameter for line search (gcd and refitFully=1)",
+     "maxIterADMM": "Maximum number of ADMM iteration (gcd and refitFully=1)",
+     "optimal": "Whether to use optimal step size or not (hazan)",
      "threshold": "Hyperparameter for huber loss",
      "dump": "Filename for dumping model",
      "load": "Filename for loading model",
