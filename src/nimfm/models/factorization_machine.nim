@@ -162,9 +162,7 @@ proc dump*(self: FactorizationMachine, fname: string) =
         params[j] = self.P[order, s, j]
       f.writeLine(params.join(" "))
   f.writeLine("w:")
-  for j in 0..<nFeatures:
-    params[j] = self.w[j]
-  f.writeLine(params.join(" "))
+  f.writeLine(self.w.join(" "))
   f.writeLine("intercept: ", self.intercept)
   f.close()
 
@@ -189,6 +187,8 @@ proc load*(fm: var FactorizationMachine, fname: string, warmStart: bool) =
   let nAugments = fm.nAugments
   var i = 0
   var val: float64
+  
+  # read P
   fm.P = zeros([nOrders, fm.nComponents, nFeatures+nAugments])
   for order in 0..<nOrders:
     discard f.readLine() # read "P[order]:" and discard it
@@ -196,7 +196,7 @@ proc load*(fm: var FactorizationMachine, fname: string, warmStart: bool) =
       let line = f.readLine()
       var i = 0
       var val: float64
-      for j in 0..<nFeatures:
+      for j in 0..<nFeatures+nAugments:
         i.inc(parseFloat(line, val, i))
         i.inc()
         fm.P[order, s, j] = val

@@ -100,15 +100,15 @@ proc dump*(self: ConvexFactorizationMachine, fname: string) =
   f.writeLine("fitLinear: ", self.fitLinear)
   f.writeLine("randomState: ", self.randomState)
   var params: seq[float64] = newSeq[float64](nFeatures)
+  f.writeLine("lams:")
+  f.writeLine(self.lams.join(" "))
   f.writeLine("P:")
   for s in 0..<nComponents:
     for j in 0..<nFeatures:
       params[j] = self.P[s, j]
     f.writeLine(params.join(" "))
   f.writeLine("w:")
-  for j in 0..<nFeatures:
-    params[j] = self.w[j]
-  f.writeLine(params.join(" "))
+  f.writeLine(self.w.join(" "))
   f.writeLine("intercept: ", self.intercept)
   f.close()
 
@@ -131,24 +131,38 @@ proc load*(fm: var ConvexFactorizationMachine, fname: string,
 
   var i = 0
   var val: float64
+
+  # read lams
+  discard f.readLine() # read "lams:"
+  let line_lams = f.readLine()
+  i = 0
+  for s in 0..<nComponents:
+    i.inc(parseFloat(line_lams, val, i))
+    i.inc()
+    fm.lams[s] = val
+
+  # read P
   fm.P = zeros([nComponents, nFeatures])
   discard f.readLine() # read "P[order]:" and discard it
   for s in 0..<nComponents:
     let line = f.readLine()
-    var i = 0
-    var val: float64
+    i = 0
     for j in 0..<nFeatures:
       i.inc(parseFloat(line, val, i))
       i.inc()
       fm.P[s, j] = val
   fm.w = zeros([nFeatures])
+
+  # read w
   discard f.readLine()
-  let line = f.readLine()
+  let line_w = f.readLine()
   i = 0
   for j in 0..<nFeatures:
-    i.inc(parseFloat(line, val, i))
+    i.inc(parseFloat(line_w, val, i))
     i.inc()
     fm.w[j] = val
+
+  # read intercept
   discard parseFloat(f.readLine().split(" ")[1], fm.intercept, 0)
   f.close()
   fm.isInitialized = true
