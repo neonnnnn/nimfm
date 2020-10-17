@@ -18,7 +18,7 @@ nimfm provides
  - Binary file for end users.
 
 ## Data format
-nimfm uses its own data type for datasets: `CSRDataset` and `CSCDataset` and provides procs for loading **[libsvm](https://www.csie.ntu.edu.tw/~cjlin/libsvm/)/[svmlight](http://svmlight.joachims.org/) format** file as such datasets.
+nimfm uses its own data type for datasets, `CSRDataset` and `CSCDataset`, and provides procs for loading **[libsvm](https://www.csie.ntu.edu.tw/~cjlin/libsvm/)/[svmlight](http://svmlight.joachims.org/) format** file as such datasets.
 `CSRDataset` is for `SGD`, `Adagrad`, `PSGD`, `Katyusha`, `PGD`, `MBPSGD`, `FISTA` and `NMAPGD` solvers.
 `CSCDataset` is for `CD`, `GreedyCD`, `Hazan`, `PCD`, and `PBCD` solvers.
 
@@ -29,12 +29,30 @@ They have only parts of a dataset in main memory and therefore are useful for a 
 
 The two-dimensional sequence `seq[seq[float64]]` can be easily transformed to such datasets by `toCSR` and `toCSC`.
 
+## Sparse regularizers
+nimfm provides some sparse regularizers [8,9,10,11] and various optimizers for such regularizers [11,12,13,14].
+The following table shows whether each optimizer can be used for each regularizer or not.
+
+|Optimizer \ Regularizer | `L1` [8] | `L21` [9,10] | `SquaredL12` [11] | `SquaredL21` [11]| `OmegaTI` [11]| `OmegaCS` [11]|
+|------------------------|------|-------|--------------|--------------|-----------|-----------|
+|`PCD` [11]|**Yes**|No|**Yes**|No|**Yes**|No|
+|`PBCD` [11]|**Yes**|**Yes**|No|**Yes**|No|**Yes**|
+|`PGD`|**Yes**|**Yes**|**Yes**|**Yes**|No|No|
+|`FISTA` [12]|**Yes**|**Yes**|**Yes**|**Yes**|No|No|
+|`NMAPGD` [13]|**Yes**|**Yes**|**Yes**|**Yes**|No|No|
+|`PSGD`|**Yes**|**Yes**|**Yes**|**Yes**|No|No|
+|`MBPSGD` (MB = MiniBatch)|**Yes**|**Yes**|**Yes**|**Yes**|No|No|
+|`Katyusha` [14]|**Yes**|**Yes**|**Yes**|**Yes**|No|No|
+
+`L21`, `SquaredL21`, and `OmegaCS` are for feature selection and others are for feature interaction selection.
+Note that `PSGD` for `SquaredL12` and `SquaredL21` might be slow when a dataset is sparse.
+
 
 ## Installation for Nim users
  Install by [nimble](https://github.com/nim-lang/nimble/):
  
  
-    nimble install https://github.com/neonnnnn/nimfm
+    nimble install nimfm
 
 
 ## Installation for end users
@@ -49,8 +67,9 @@ The two-dimensional sequence `seq[seq[float64]]` can be easily transformed to su
 
     nimble make
 
-Then, nimfm binary will be created in the ./bin directory.
-`.bin/nimfm --help` shows the usage.
+Then, `nimfm`, `nimfm_cfm`, and `nimfm_sparsefm` binary will be created in the ./bin directory.
+`nimfm` is for conventional factorization machines, `nimfm_cfm` is for convex factorization machines, and `nimfm_sparsefm` is for factorization machines with sparse regularization.
+`./bin/[binary-name] --help` shows the usage.
 
 ## References
 
@@ -60,15 +79,13 @@ Then, nimfm binary will be created in the ./bin directory.
 
 3. M. Blondel, A. Fujino, N. Ueda, M. Ishihata. Higher-order factorization machines. In NeurIPS, pp. 3351--3359, 2016.
 
-4. L. Bottou. Stochastic gradient descent tricks. Neural Networks, Tricks of the Trade, Reloaded, pp. 430–445, 
- Lecture Notes in Computer Science (LNCS 7700), Springer, 2012.
+4. L. Bottou. Stochastic gradient descent tricks. Neural Networks, Tricks of the Trade, Reloaded, pp. 430–445, Lecture Notes in Computer Science (LNCS 7700), Springer, 2012.
 
 5. J. Duchi, E. Hazan, and Y. Singer. Adaptive subgradient methods for online learning and stochastic optimization. Journal of Machine Learning Research, 12(Jul):2121-–2159, 2011. 
 
 6. M. Blondel, A. Fujino, and N. Ueda. Convex factorization machines. In ECML-PKDD, pp. 19--35, 2015.
 
-7. M. Yamada, W. Lian, A. Goyal, J. Chen, K. Wimalawarne, S. A. Khan, S. Kaski, H. Mamitsuka, and Y. Chang.
-   Convex factorization machine for toxicogenomics prediction. In KDD, pp. 1215--1224, 2017.
+7. M. Yamada, W. Lian, A. Goyal, J. Chen, K. Wimalawarne, S. A. Khan, S. Kaski, H. Mamitsuka, and Y. Chang. Convex factorization machine for toxicogenomics prediction. In KDD, pp. 1215--1224, 2017.
 
 8. Z. Pan, E. Chen, Q. Liu, T. Xu, H. Ma, and H. Lin. Sparse factorization machines for click-through rate prediction. In ICDM, pp. 400--409, 2016.
 
