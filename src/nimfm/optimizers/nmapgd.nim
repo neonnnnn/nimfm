@@ -190,7 +190,7 @@ proc fit*[L, R](self: NMAPGD[L, R], X: RowDataset, y: seq[float64],
   var
     yPred: Vector = zeros([nSamples])
     dL: Vector = zeros([nSamples])
-    P: Tensor = zeros([nOrders, sfm.P.shape[2], nComponents])
+    P: Tensor = zeros([nOrders, nFeatures+nAugments, nComponents])
     params: Params
     y_params, y_grads, x_grads, s_params, r_params: Params
     A: Matrix = zeros([nComponents, degree+1])

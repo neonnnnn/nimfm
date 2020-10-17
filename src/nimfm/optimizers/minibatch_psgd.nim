@@ -141,7 +141,6 @@ proc fit*[L, R](self: MBPSGD[L, R], X: RowDataset, y: seq[float64],
     fitIntercept = sfm.fitIntercept
     nAugments = sfm.nAugments
   var
-    dL: Vector = zeros([nSamples])
     P: Tensor = zeros([nOrders, sfm.P.shape[2], nComponents])
     params = newParams(P, sfm.w, sfm.intercept, fitLinear, fitIntercept)
     A: Matrix = zeros([nComponents, degree+1])
