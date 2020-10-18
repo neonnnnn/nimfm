@@ -11,7 +11,6 @@ type
     fitLinear*: bool        ## Whether to fit linear term.
     ignoreDiag*: bool       ## Whether ignored diag (FM) or not (PN).
     warmStart*: bool        ## Whether to do warwm start fitting.
-    randomState*: int       ## The seed of the pseudo random number generator.
     isInitialized*: bool
     P*: Matrix              ## Weights for the polynomial.
                             ## shape (nComponents, nFeatures)
@@ -98,17 +97,13 @@ proc dump*(self: ConvexFactorizationMachine, fname: string) =
   f.writeLine("maxComponents: ", self.maxComponents)
   f.writeLine("fitIntercept: ", self.fitIntercept)
   f.writeLine("fitLinear: ", self.fitLinear)
-  f.writeLine("randomState: ", self.randomState)
-  var params: seq[float64] = newSeq[float64](nFeatures)
+  f.writeLine("lams:")
+  f.writeLine(self.lams.join(" "))
   f.writeLine("P:")
   for s in 0..<nComponents:
-    for j in 0..<nFeatures:
-      params[j] = self.P[s, j]
-    f.writeLine(params.join(" "))
+    f.writeLine(self.P[s].join(" "))
   f.writeLine("w:")
-  for j in 0..<nFeatures:
-    params[j] = self.w[j]
-  f.writeLine(params.join(" "))
+  f.writeLine(self.w.join(" "))
   f.writeLine("intercept: ", self.intercept)
   f.close()
 
@@ -120,35 +115,50 @@ proc load*(fm: var ConvexFactorizationMachine, fname: string,
   var f: File = open(fname, fmRead)
   var nFeatures: int
   var nComponents: int
+  var degree: int
   fm.task = parseEnum[TaskKind](f.readLine().split(" ")[1])
   discard parseInt(f.readLine().split(" ")[1], nFeatures, 0)
+  discard parseInt(f.readLine().split(" ")[1], degree, 0)
   discard parseInt(f.readLine().split(" ")[1], nComponents, 0)
   discard parseInt(f.readLine().split(" ")[1], fm.maxComponents, 0)
   fm.fitIntercept = parseBool(f.readLine().split(" ")[1])
   fm.fitLinear = parseBool(f.readLine().split(" ")[1])
   fm.warmStart = warmStart
-  discard parseInt(f.readLine().split(" ")[1], fm.randomState, 0)
 
   var i = 0
   var val: float64
+
+  # read lams
+  discard f.readLine() # read "lams:"
+  let line_lams = f.readLine()
+  i = 0
+  fm.lams = zeros([nComponents])
+
+  for s in 0..<nComponents:
+    i.inc(parseFloat(line_lams, val, i))
+    i.inc()
+    fm.lams[s] = val
+  # read P
   fm.P = zeros([nComponents, nFeatures])
   discard f.readLine() # read "P[order]:" and discard it
   for s in 0..<nComponents:
     let line = f.readLine()
-    var i = 0
-    var val: float64
+    i = 0
     for j in 0..<nFeatures:
       i.inc(parseFloat(line, val, i))
       i.inc()
       fm.P[s, j] = val
   fm.w = zeros([nFeatures])
+
+  # read w
   discard f.readLine()
-  let line = f.readLine()
+  let line_w = f.readLine()
   i = 0
   for j in 0..<nFeatures:
-    i.inc(parseFloat(line, val, i))
+    i.inc(parseFloat(line_w, val, i))
     i.inc()
     fm.w[j] = val
+  # read intercept
   discard parseFloat(f.readLine().split(" ")[1], fm.intercept, 0)
   f.close()
   fm.isInitialized = true

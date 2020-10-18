@@ -97,7 +97,6 @@ proc fit*[L, R](self: FISTA[L, R], X: RowDataset, y: seq[float64],
   # perform optimization
   var lossVal = Inf
   var regVal = Inf
-  var it = 0
   for it in 0..<self.maxIter:
     let t = (sqrt(4*self.t^2+1.0)+1.0) / 2.0
     # compute z_{k+1}

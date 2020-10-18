@@ -154,17 +154,14 @@ proc dump*(self: FactorizationMachine, fname: string) =
   f.writeLine("fitLinear: ", self.fitLinear)
   f.writeLine("randomState: ", self.randomState)
   f.writeLine("scale: ", self.scale)
-  var params: seq[float64] = newSeq[float64](nFeatures)
+  f.writeLine("lams:")
+  f.writeLine(self.lams.join(" "))
   for order in 0..<self.P.shape[0]:
     f.writeLine("P[", order, "]:")
     for s in 0..<nComponents:
-      for j in 0..<nFeatures+self.nAugments:
-        params[j] = self.P[order, s, j]
-      f.writeLine(params.join(" "))
+      f.writeLine(self.P[order, s].join(" "))
   f.writeLine("w:")
-  for j in 0..<nFeatures:
-    params[j] = self.w[j]
-  f.writeLine(params.join(" "))
+  f.writeLine(self.w.join(" "))
   f.writeLine("intercept: ", self.intercept)
   f.close()
 
@@ -189,14 +186,24 @@ proc load*(fm: var FactorizationMachine, fname: string, warmStart: bool) =
   let nAugments = fm.nAugments
   var i = 0
   var val: float64
+  # read lams
+  discard f.readLine() # read "lams:"
+  let line_lams = f.readLine()
+  i = 0
+  fm.lams = zeros([fm.nComponents])
+  for s in 0..<fm.nComponents:
+    i.inc(parseFloat(line_lams, val, i))
+    i.inc()
+    fm.lams[s] = val
+  
+  # read P
   fm.P = zeros([nOrders, fm.nComponents, nFeatures+nAugments])
   for order in 0..<nOrders:
     discard f.readLine() # read "P[order]:" and discard it
     for s in 0..<fm.nComponents:
       let line = f.readLine()
-      var i = 0
-      var val: float64
-      for j in 0..<nFeatures:
+      i = 0
+      for j in 0..<nFeatures+nAugments:
         i.inc(parseFloat(line, val, i))
         i.inc()
         fm.P[order, s, j] = val

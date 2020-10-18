@@ -20,10 +20,9 @@ type
     nCalls: int
 
 
-proc newSGD*[L](maxIter=100, alpha0=1e-6, alpha=1e-3, beta=1e-3,
-                loss: L = newSquared(), eta0 = 0.01, scheduling = optimal,
-                power = 1.0, verbose = 1, tol = 1e-3, shuffle = true,
-                nCalls = -1): SGD[L] =
+proc newSGD*[L](maxIter=100, eta0 = 0.01, alpha0=1e-6, alpha=1e-3, beta=1e-3,
+                loss: L = newSquared(), scheduling = optimal, power = 1.0,
+                verbose = 1, tol = 1e-3, shuffle = true, nCalls = -1): SGD[L] =
   ## Creates new SGD.
   ## maxIter: Maximum number of iteration. At each iteration,
   ##          all parameters are updated nSamples times.

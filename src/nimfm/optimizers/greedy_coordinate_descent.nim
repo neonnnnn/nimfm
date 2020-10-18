@@ -479,7 +479,8 @@ proc fit*[L](self: GreedyCD[L], X: ColDataset, y: seq[float64],
     if not callback.isNil:
       callback(self, cfm)
     if self.verbose > 0:
-      stdout.write(fmt"   Whole Objective: {newLossVal+newRegVal:1.4e}")
+      stdout.write(fmt"   Loss: {newLossVal:1.4e}")
+      stdout.write(fmt"   Reg: {newRegVal:1.4e}")
       stdout.write("\n")
     if abs(newLossVal + newRegVal - oldLossVal - oldRegVal) < self.tol:
       if self.verbose > 0:
