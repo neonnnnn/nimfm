@@ -24,7 +24,6 @@ proc eval(fm: FactorizationMachine, task: TaskKind, test: string,
   case task
   of regression:
     echo("Test RMSE: ", rmse(y, yPred))
-    echo(fm.score(X, y))
   of classification:
     echo("Test Accuracy: ",
          accuracy(y.map(x=>sgn(x)), yPred.map(x=>sgn(x))))
