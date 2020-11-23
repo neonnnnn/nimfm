@@ -37,7 +37,7 @@ jobs:
       run: |
         export PATH=$HOME/.nimble/bin:$PATH
         nimble install -y
-        echo ::add-path::$HOME/.nimble/bin
+        echo $HOME/.nimble/bin >> $GITHUB_PATH
 
     - name: Unit testing
       run: |

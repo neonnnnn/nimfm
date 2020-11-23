@@ -1,9 +1,9 @@
 import unittest
-import utils, optimizers/cd_slow
+import utils, optimizer/cd_slow
 import nimfm/loss, nimfm/dataset, nimfm/tensor/tensor
-import nimfm/models/factorization_machine, nimfm/models/fm_base
-import nimfm/optimizers/coordinate_descent
-import models/fm_slow
+import nimfm/model/factorization_machine, nimfm/model/fm_base
+import nimfm/optimizer/cd
+import model/fm_slow
 
 
 suite "Test coordinate descent":

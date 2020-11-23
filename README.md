@@ -4,20 +4,21 @@ A library for factorization machines in [Nim](https://nim-lang.org/).
 [![Actions Status](https://github.com/neonnnnn/nimfm/workflows/Build/badge.svg)](https://github.com/neonnnnn/nimfm/actions)
 
 
-Factorization machines (FMs)[1, 2] are machine learning models using second-order feature combinations (e.g., x1 * x2, x2 * x5) efficiently.
+Factorization machines (FMs)[1,2] are machine learning models using second-order feature combinations (e.g., x1 * x2, x2 * x5) efficiently.
 
 nimfm provides
 
  - Not-only second-order but also higher-order factorization machines [3].
  - Coordinate descent (a.k.a alternative least squares) solver.
- - Stochastic gradient descent solver with some step-size scheduling methods [4].
- - AdaGrad solver [5].
+ - Stochastic gradient descent solver with some step-size scheduling methods [4] and AdaGrad solver [5].
  - Greedy coordinate descent [6] and Hazan's (Frank-Wolfe) algorithm [7] (with some heuristics) solvers for convex factorization machines.
  - Some sparse regularizers [8,9,10,11] for feature selection and feature interaction selection, and various optimizers for such regularizers [11,12,13,14].
+ - Field-aware factorization machines [15] and AdaGrad/SGD solver for them.
  - Various loss functions: Squared, Huber, SquaredHinge, and Logistic.
  - Binary file for end users.
 
 ## Data format
+### For `FactorizationMachine` and `ConvexFactorizationMachine`
 nimfm uses its own data type for datasets, `CSRDataset` and `CSCDataset`, and provides procs for loading **[libsvm](https://www.csie.ntu.edu.tw/~cjlin/libsvm/)/[svmlight](http://svmlight.joachims.org/) format** file as such datasets.
 `CSRDataset` is for `SGD`, `Adagrad`, `PSGD`, `Katyusha`, `PGD`, `MBPSGD`, `FISTA` and `NMAPGD` solvers.
 `CSCDataset` is for `CD`, `GreedyCD`, `Hazan`, `PCD`, and `PBCD` solvers.
@@ -28,6 +29,11 @@ They have only parts of a dataset in main memory and therefore are useful for a 
 `transposeFile` converts a `StreamCSRDataset` format file to a `StreamCSCDataset` format file.
 
 The two-dimensional sequence `seq[seq[float64]]` can be easily transformed to such datasets by `toCSR` and `toCSC`.
+
+### For `FieldAwareFactorizationMachine`
+For field-aware factorization machines, nimfm provides `CSRFieldDataset`, `CSCFieldDataset`, and procs for loading **[libffm](https://www.csie.ntu.edu.tw/~cjlin/libffm/) format** file as such datasets.
+Binary formats for field-aware datasets, `CSRFieldStreamDataset` and `CSCFieldStreamDataset`, are also supported.
+Note that currently (version 0.3.0) nimfm provides no solver using `CSCFieldDataset`.
 
 ## Sparse regularizers
 nimfm provides some sparse regularizers [8,9,10,11] and various optimizers for such regularizers [11,12,13,14].
@@ -46,6 +52,10 @@ The following table shows whether each optimizer can be used for each regularize
 
 `L21`, `SquaredL21`, and `OmegaCS` are for feature selection and others are for feature interaction selection.
 Note that `PSGD` for `SquaredL12` and `SquaredL21` might be slow when a dataset is sparse.
+
+## Multi-threading
+Currently (version 0.3.0), `SGD` and `AdaGrad` solvers for `FactorizationMachine` and `FieldAwareFactorizationMachine` can run with multi-threading.
+They update model parameters **asynchronously**, so their results are different from those of single-thearding version.
 
 
 ## Installation for Nim users
@@ -70,6 +80,10 @@ Note that `PSGD` for `SquaredL12` and `SquaredL21` might be slow when a dataset 
 Then, `nimfm`, `nimfm_cfm`, and `nimfm_sparsefm` binary will be created in the ./bin directory.
 `nimfm` is for conventional factorization machines, `nimfm_cfm` is for convex factorization machines, and `nimfm_sparsefm` is for factorization machines with sparse regularization.
 `./bin/[binary-name] --help` shows the usage.
+
+## How to use nimfm?
+Please see examples at `benchmarks` directory.
+If you are familiar with **[scikit-learn](https://scikit-learn.org/stable/)**, you probably will be able to use nimfm well.
 
 ## References
 
@@ -100,6 +114,8 @@ Then, `nimfm`, `nimfm_cfm`, and `nimfm_sparsefm` binary will be created in the .
 13. H. Li and Z. Lin. Accelerated proximal gradient methods for nonconvex programming. In NeurIPS, pp. 379-–387, 2015.
 
 14. Z. Allen-Zhu. Katyusha: The first direct acceleration of stochastic gradient methods. Journal of Machine Learning Research, 18(1):8194–-8244, 2017.
+
+15. Y. Juan, Y. Zhuang, W-S. Chin, and C-J. Lin: Field-aware factorization machines for CTR prediction. In SIGIR, pp. 43--50, 2016.
 
 ## Authors
  - Kyohei Atarashi, 2020-present

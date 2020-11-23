@@ -1,6 +1,6 @@
 import httpclient, os, streams, tables, strutils, sequtils, parseutils
 import zip/zipfiles, random
-import nimfm, nimfm/utils
+import nimfm/dataset, nimfm/utils
 
 const nUsers = 943
 const nItems = 1682
@@ -27,9 +27,9 @@ proc createUserItemDataset(indices: openarray[int]) =
   (XTr, yTr) = shuffle(X, y, indices[0..<nTrain])
   (XTe, yTe) = shuffle(X, y, indices[nTrain..^1])
 
-  dumpSVMLightFile("ml-100k_user_item_all.svm", X, y)
-  dumpSVMLightFile("ml-100k_user_item_train.svm", Xtr, yTr)
-  dumpSVMLightFile("ml-100k_user_item_test.svm", XTe, yTe)
+  dumpSVMLightFile("dataset/ml-100k_user_item_all.svm", X, y)
+  dumpSVMLightFile("dataset/ml-100k_user_item_train.svm", Xtr, yTr)
+  dumpSVMLightFile("dataset/ml-100k_user_item_test.svm", XTe, yTe)
 
 
 proc createUserFeatureMatrix(): CSRDataset = 
@@ -146,14 +146,14 @@ proc createUserItemFeatureDataset(indices: openarray[int]) =
   let nTrain = int(8*X.nSamples/10)
   (XTr, yTr) = shuffle(XAll, y, indices[0..<nTrain])
   (XTe, yTe) = shuffle(XAll, y, indices[nTrain..^1])
-  dumpSVMLightFile("ml-100k_user_item_feature_all.svm", XAll, y)
-  dumpSVMLightFile("ml-100k_user_item_feature_train.svm", Xtr, yTr)
-  dumpSVMLightFile("ml-100k_user_item_feature_test.svm", Xte, yTe)
+  dumpSVMLightFile("dataset/ml-100k_user_item_feature_all.svm", XAll, y)
+  dumpSVMLightFile("dataset/ml-100k_user_item_feature_train.svm", Xtr, yTr)
+  dumpSVMLightFile("dataset/ml-100k_user_item_feature_test.svm", Xte, yTe)
 
 
 when isMainModule:
   var client = newHttpClient()
-  if not existsFile("ml-100k.svm"):
+  if not existsFile("dataset/ml-100k.svm"):
     if not existsFile("ml-100k.zip"):
       echo("Download ml-100k data...")
       client.downloadFile(fileurl, "ml-100k.zip")
@@ -168,6 +168,7 @@ when isMainModule:
     z.close()
     echo("Done.")
     
+    discard execShellCmd("mkdir -p dataset")
     randomize(1)
     var indices = toSeq(0..<nRatings)
     shuffle(indices)

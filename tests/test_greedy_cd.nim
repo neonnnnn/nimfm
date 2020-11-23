@@ -1,9 +1,9 @@
 import unittest
-import utils, optimizers/greedy_cd_slow, models/cfm_slow
+import utils, optimizer/greedy_cd_slow, model/cfm_slow
 import nimfm/loss, nimfm/dataset, nimfm/tensor/tensor
-import nimfm/models/convex_factorization_machine, nimfm/models/fm_base
-from nimfm/models/factorization_machine import FitLowerKind
-import nimfm/optimizers/greedy_coordinate_descent
+import nimfm/model/convex_factorization_machine, nimfm/model/fm_base
+from nimfm/model/factorization_machine import FitLowerKind
+import nimfm/optimizer/greedy_cd
 import random
 
 

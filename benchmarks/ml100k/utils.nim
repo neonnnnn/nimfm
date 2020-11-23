@@ -1,4 +1,4 @@
-import nimfm
+import nimfm/tensor
 
 # P: (nFeatures, nComponents)
 # Too slow.

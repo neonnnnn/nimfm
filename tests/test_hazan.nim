@@ -1,9 +1,9 @@
 import unittest
-import utils, optimizers/hazan_slow, models/cfm_slow
+import utils, optimizer/hazan_slow, model/cfm_slow
 import nimfm/dataset, nimfm/tensor/tensor
-import nimfm/models/convex_factorization_machine, nimfm/models/fm_base
-from nimfm/models/factorization_machine import FitLowerKind
-import nimfm/optimizers/hazan
+import nimfm/model/convex_factorization_machine, nimfm/model/fm_base
+from nimfm/model/factorization_machine import FitLowerKind
+import nimfm/optimizer/hazan
 import random
 
 
