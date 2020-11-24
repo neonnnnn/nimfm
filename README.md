@@ -32,7 +32,7 @@ The two-dimensional sequence `seq[seq[float64]]` can be easily transformed to su
 
 ### For `FieldAwareFactorizationMachine`
 For field-aware factorization machines, nimfm provides `CSRFieldDataset`, `CSCFieldDataset`, and procs for loading **[libffm](https://www.csie.ntu.edu.tw/~cjlin/libffm/) format** file as such datasets.
-Binary formats for field-aware datasets, `CSRFieldStreamDataset` and `CSCFieldStreamDataset`, are also supported.
+Binary formats for field-aware datasets, `StreamCSRFieldDataset` and `StreamCSCFieldDataset`, are also supported.
 Note that currently (version 0.3.0) nimfm provides no solver using `CSCFieldDataset`.
 
 ## Sparse regularizers
