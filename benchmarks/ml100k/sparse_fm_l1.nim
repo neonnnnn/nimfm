@@ -1,13 +1,14 @@
-import nimfm, utils
+import utils
+import nimfm/dataset, nimfm/model, nimfm/regularizer, nimfm/tensor
+import nimfm/optimizer/pcd
 import strformat
-
 
 when isMainModule:
   var XTr, XTe: CSCDataset
   var yTr, yTe: seq[float64]
-  loadSVMLightFile("ml-100k_user_item_feature_train.svm",
+  loadSVMLightFile("dataset/ml-100k_user_item_feature_train.svm",
                     XTr, yTr, nFeatures=2703)
-  loadSVMLightFile("ml-100k_user_item_feature_test.svm",
+  loadSVMLightFile("dataset/ml-100k_user_item_feature_test.svm",
                     XTe, yTe, nFeatures=2703)
 
   var reg = newL1()
@@ -15,10 +16,10 @@ when isMainModule:
   for gamma in [1e-5, 2e-5, 4e-5, 8e-5, 16e-5]:
     var fm = newFactorizationMachine(
       task=regression, warmStart=false, degree=2)
-    var cd = newPCD(
+    var optim = newPCD(
       maxIter=100, verbose=0, beta=beta, alpha0=1e-10, alpha=1e-5,
       gamma=gamma, reg=reg)
-    cd.fit(Xtr, yTr, fm)
+    optim.fit(Xtr, yTr, fm)
 
     echo(fmt"gamma = {gamma}")
     echo("L1 norm of the interaction matrix: ", norm(matmul(fm.P[0].T, fm.P[0]), 1))

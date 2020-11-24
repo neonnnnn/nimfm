@@ -1,6 +1,6 @@
 import unittest, sequtils
-import nimfm/regularizers/regularizers
-import regularizers/squaredl12_slow, random
+import nimfm/regularizer/regularizers
+import regularizer/squaredl12_slow, random
 
 
 suite "Test proximal operator of SquaredL12":

@@ -1,11 +1,11 @@
 import unittest
-import utils, optimizers/psgd_slow
+import utils, optimizer/psgd_slow
 import nimfm/loss, nimfm/dataset, nimfm/tensor/tensor
-import nimfm/models/factorization_machine, nimfm/models/fm_base
-import nimfm/optimizers/psgd
-import models/fm_slow
-import nimfm/regularizers/regularizers
-import regularizers/squaredl12_slow
+import nimfm/model/factorization_machine, nimfm/model/fm_base
+import nimfm/optimizer/psgd
+import model/fm_slow
+import nimfm/regularizer
+import regularizer/squaredl12_slow
 
 
 suite "Test proximal stochastic gradient descent for SquaredL12":

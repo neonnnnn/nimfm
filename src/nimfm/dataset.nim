@@ -16,11 +16,23 @@ type
 
   CSCDataset* = BaseDataset[CSCMatrix]
 
+  CSCFieldDataset* = BaseDataset[CSCFieldMatrix]
+
+  CSRFieldDataset* = BaseDataset[CSRFieldMatrix]
+
   StreamCSRDataset* = BaseDataset[StreamCSRMatrix]
 
   StreamCSCDataset* = BaseDataset[StreamCSCMatrix]
   
-  RowDataset* = CSRDataset|StreamCSRDataset
+  StreamCSRFieldDataset* = BaseDataset[StreamCSRFieldMatrix]
+
+  StreamCSCFieldDataset* = BaseDataset[StreamCSRFieldMatrix]
+
+  RowFieldDataset* = CSRFieldDataset|StreamCSRFieldDataset
+
+  ColFieldDataset* = CSCFieldDataset|StreamCSCFieldDataset
+
+  RowDataset* = CSRDataset|StreamCSRDataset|RowFieldDataset
 
   ColDataset* = CSCDataset|StreamCSCDataset
 
@@ -34,6 +46,9 @@ func nSamples*[T](self: BaseDataset[T]): int = self.data.shape[0]
 
 func nFeatures*[T](self: BaseDataset[T]): int =
   result = self.data.shape[1] + self.nAugments
+
+
+func nFields*(self: CSRFieldDataset): int = self.data.nFields
 
 
 func shape*[T](self: BaseDataset[T]): array[2, int] =
@@ -60,6 +75,9 @@ func min*[T](self: BaseDataset[T]): float64 =
     result = min(result, min(self.dummy[0..<self.nAugments]))
 
 
+func nCached*[T](self: BaseDataset[T]): int = self.data.nCached
+
+
 proc `*=`*[T](self: BaseDataset[T], val: float64) = 
   ## Multiples val to each element (in-place).
   self.data *= val
@@ -79,6 +97,10 @@ proc addDummyFeature*[T](self: BaseDataset[T], value=1.0, n=1) =
     else:
       self.dummy.add(value)
   self.nAugments += n
+
+
+proc readCache*[T](self: BaseDataset[T], i: int, tranpose=false) =
+  self.data.readCache(i, tranpose)
 
 
 proc removeDummyFeature*[T](self: BaseDataset[T], n=1) =
@@ -117,6 +139,34 @@ func newCSCDataset*(data: CSCMatrix): CSCDataset =
   result = CSCDataset(data: data, nAugments: 0, dummy: @[])
 
 
+func newCSRFieldDataset*(data: seq[float64], indices, indptr, fields: seq[int],
+                         nSamples, nFeatures, nFields: int): CSRFieldDataset =
+  ## Creates new CSRFieldDataset instance
+  let csr = newCSRFieldMatrix(data=data, indices=indices, indptr=indptr,
+                              fields=fields, shape=[nSamples, nFeatures],
+                              nFields=nFields)
+  result = CSRFieldDataset(data: csr, nAugments: 0, dummy: @[])
+
+
+func newCSRFieldDataset*(data: CSRFieldMatrix): CSRFieldDataset =
+  ## Creates new CSRFieldDataset instance
+  result = CSRFieldDataset(data: data, nAugments: 0, dummy: @[])
+
+
+func newCSCFieldDataset*(data: seq[float64], indices, indptr, fields: seq[int],
+                         nSamples, nFeatures, nFields: int): CSCFieldDataset =
+  ## Creates new CSRDataset instance
+  let csc = newCSCFieldMatrix(data=data, indices=indices, indptr=indptr,
+                              fields=fields, shape=[nSamples, nFeatures],
+                              nFields=nFields)
+  result = CSCFieldDataset(data: csc, nAugments: 0, dummy: @[])
+
+
+func newCSCFieldDataset*(data: CSCFieldMatrix): CSCFieldDataset =
+  ## Creates new CSRDataset instance
+  result = CSCFieldDataset(data: data, nAugments: 0, dummy: @[])
+
+
 proc newStreamCSRDataset*(f: string, cacheSize=200): StreamCSRDataset =
   ## Creates new StreamCSRDataset instance
   let csr = newStreamCSRMatrix(f=f, cacheSize=cacheSize)
@@ -148,6 +198,27 @@ proc getRow*(self: RowDataset, i: int): iterator(): (int, float64) =
     if self.nAugments > 0:
       for j in 0..<self.nAugments: # dummy feature
         yield (j+self.data.shape[1], self.dummy[j])
+
+
+iterator getRowWithField*(self: RowFieldDataset, i: int): (int, int, float64) =
+  ## Yields the index and the value of non-zero elements in i-th row.
+  for (f, j, val) in self.data.getRowWithField(i):
+    yield (f, j, val)
+
+  if self.nAugments > 0:
+    for j in 0..<self.nAugments: # dummy feature
+      yield (self.data.nFields+j, j+self.data.shape[1], self.dummy[j])
+
+
+proc getRowWithField*(self: RowFieldDataset, i: int): iterator(): (int, int, float64) =
+  ## Yields the index and the value of non-zero elements in i-th row.
+  return iterator(): (int, int, float64) =
+    for (f, j, val) in self.data.getRowWithField(i):
+      yield (f, j, val)
+
+    if self.nAugments > 0:
+      for j in 0..<self.nAugments: # dummy feature
+        yield (self.data.nFields+j, j+self.data.shape[1], self.dummy[j])
 
 
 iterator getRowIndices*(self: RowDataset, i: int): int =
@@ -255,19 +326,19 @@ func `[]`*(X: CSRDataset, indicesRow: openarray[int]): CSRDataset =
 
 
 func `[]`*(X: CSRDataset, slice: Slice[int]): CSRDataset =
-  ## Takes out the row vectors of X and returns new CSRDatasets by slicing.
+  ## Takes out the row vectors of X and returns new CSRDataset by slicing.
   result = X[toSeq(slice)]
 
 
 func `[]`*(X: CSRDataset, slice: HSlice[int, BackwardsIndex]): CSRDataset =
-  ## Takes out the row vectors of X and returns new CSRDatasets by slicing.
+  ## Takes out the row vectors of X and returns new CSRDataset by slicing.
   result = X[slice.a..(X.nSamples-int(slice.b))]
 
 
 # Accessing row vectors by openarray is not supported for CSCDataset now
 # By Slice is supported, but slow (O(nnz(X)))
 func `[]`*(X: CSCDataset, slice: Slice[int]): CSCDataset =
-  ## Takes out the row vectors of X and returns new CSCDatasets by slicing.
+  ## Takes out the row vectors of X and returns new CSCDataset by slicing.
   checkIndicesRow(X, toSeq(slice))
   let data = X.data[slice]
   let dummy = X.dummy
@@ -275,24 +346,42 @@ func `[]`*(X: CSCDataset, slice: Slice[int]): CSCDataset =
 
 
 func `[]`*(X: CSCDataset, slice: HSlice[int, BackwardsIndex]): CSCDataset =
-  ## Takes out the row vectors of X and returns new CSCDatasets by slicing.
+  ## Takes out the row vectors of X and returns new CSCDataset by slicing.
   result = X[slice.a..(X.nSamples-int(slice.b))]
 
 
-func shuffle*[T](X: CSRDataset, y: seq[T],
-                 indices: openarray[int]): (CSRDataset, seq[T]) =
+func `[]`*(X: CSRFieldDataset, indicesRow: openarray[int]): CSRFieldDataset =
+  ## Returns new CSRFieldDataset whose row vectors are that of X.
+  ## Specifies the indices of row vectors taken out by indicesRow.
+  checkIndicesRow(X, indicesRow)
+  let data = X.data[indicesRow]
+  let dummy = X.dummy
+  result = CSRFieldDataset(data: data, nAugments: X.nAugments, dummy: dummy)
+
+
+func `[]`*(X: CSRFieldDataset, slice: Slice[int]): CSRFieldDataset =
+  ## Takes out the row vectors of X and returns new CSRFieldDataset by slicing.
+  result = X[toSeq(slice)]
+
+
+func `[]`*(X: CSRFieldDataset, slice: HSlice[int, BackwardsIndex]): CSRFieldDataset =
+  ## Takes out the row vectors of X and returns new CSRFieldDataset by slicing.
+  result = X[slice.a..(X.nSamples-int(slice.b))]
+
+
+func shuffle*[T, U](X: T, y: seq[U], indices: openarray[int]): (T, seq[U]) =
   ## Shuffles the dataset X and target y by using indices.
   if len(y) != X.nSamples:
     raise newException(ValueError, "X.nSamples != len(y)")
 
-  var yShuffled = newSeq[T](len(indices))
+  var yShuffled = newSeq[U](len(indices))
   for ii, i in indices:
     yShuffled[ii] = y[i]
   
   result = (X[indices], yShuffled)
 
 
-func shuffle*[T](X: CSRDataset, y: seq[T]): (CSRDataset, seq[T]) =
+func shuffle*[T, U](X: T, y: seq[U]): (T, seq[U]) =
   ## Shuffles the dataset X and target y.
   if len(y) != X.nSamples:
     raise newException(ValueError, "X.nSamples != len(y)")
@@ -336,6 +425,18 @@ func toCSCDataset*(self: CSRDataset): CSCDataset =
   ## Transforms CSRDataset to CSCDataset
   let csc = toCSCMatrix(self.data)
   result = CSCDataset(data: csc, nAugments: 0, dummy: @[])
+
+
+proc toCSRFieldDataset*(input: seq[seq[float64]]): CSRFieldDataset =
+  ## Transforms seq[seq[float64]] to CSRDataset.
+  let csr = toCSRFieldMatrix(input)
+  result = newCSRFieldDataset(csr)
+
+
+proc toCSCFieldDataset*(input: seq[seq[float64]]): CSCFieldDataset =
+  ## Transforms seq[seq[float64]] to CSRDataset.
+  let csc = toCSCFieldMatrix(input)
+  result = newCSCFieldDataset(csc)
 
 
 func toSeq*(self: CSRDataset): seq[seq[float64]] = 
@@ -414,6 +515,38 @@ func hstack*(datasets: varargs[CSCDataset]): CSCDataset =
   
   let data = hstack(mats)
   result = newCSCDataset(data)
+
+
+func hstack*(datasets: varargs[CSRFieldDataset]): CSRFieldDataset =
+  ## Stacks CSRDatasets horizontally.
+  var mats = newSeq[CSRFieldMatrix](len(datasets))
+  var nSamples = 0
+  for i, X in datasets:
+    if X.nAugments == 0:
+      mats[i] = X.data
+    else:
+      var dummy = newSeqWith(X.nSamples, newSeqWith(X.nAugments, 0.0))
+      for n in 0..<X.nSamples:
+        dummy[n] = X.dummy[0..<X.nAugments]
+      mats[i] = hstack([X.data, toCSRFieldMatrix(dummy)])
+  let data = hstack(mats)
+  result = newCSRFieldDataset(data)
+
+ 
+func hstack*(datasets: varargs[CSCFieldDataset]): CSCFieldDataset =
+  ## Stacks CSRDatasets horizontally.
+  var mats = newSeq[CSCFieldMatrix](len(datasets))
+  var nSamples = 0
+  for i, X in datasets:
+    if X.nAugments == 0:
+      mats[i] = X.data
+    else:
+      var dummy = newSeqWith(X.nSamples, newSeqWith(X.nAugments, 0.0))
+      for n in 0..<X.nSamples:
+        dummy[n] = X.dummy[0..<X.nAugments]
+      mats[i] = hstack([X.data, toCSCFieldMatrix(dummy)])
+  let data = hstack(mats)
+  result = newCSCFieldDataset(data)
 
 
 func toSeq*(self: CSCDataset): seq[seq[float64]] = 
@@ -560,6 +693,103 @@ proc loadSVMLightFile*(f: string, dataset: var CSCDataset, y: var seq[int],
   y = map(yFloat, proc (x: float64): int = int(x))
 
 
+proc loadFFMFile(f: string, y: var seq[float64]):
+                 tuple[data: seq[float64], indices, indptr, fields: seq[int],
+                       nFeatures, offset, nFields, offsetField: int] =
+  var nnz: int = 0
+  var nSamples: int = 0
+  var i, j, field, k: int
+  var val, target: float64
+  var minIndex = 1
+  var maxIndex = 0
+  var minFieldIndex = 1
+  var maxFieldIndex = 1
+  for line in expandTilde(f).lines:
+    k = 0
+    nSamples.inc()
+    k.inc(parseFloat(line, target, k))
+    k.inc()
+    while k < len(line):
+      # read field index
+      k.inc(parseInt(line, field, k))
+      minFieldIndex = min(field, minFieldIndex)
+      maxFieldIndex = max(field, maxFieldIndex)
+      k.inc()
+
+      # read feature index
+      k.inc(parseInt(line, j, k))
+      minIndex = min(j, minIndex)
+      maxIndex = max(j, maxIndex)
+      k.inc()
+      
+      k.inc(parseFloat(line, val, k))
+      k.inc()
+      nnz.inc()
+
+  y.setLen(nSamples)
+  if minIndex < 0:
+    raise newException(ValueError, "Negative index is included.")
+  let offset = if minIndex == 0: 0 else: 1 # basically assume 1-based
+  let nFeatures = maxIndex + 1 - offset
+  let offsetField = if minFieldIndex == 0: 0 else: 1
+  let nFields = maxFieldIndex + 1 - offsetField
+  var data = newSeq[float64](nnz)
+  var indices = newSeq[int](nnz)
+  var indptr = newSeq[int](nSamples+1)
+  var fields = newSeq[int](nnz)
+  i = 0
+  nnz = 0
+  indptr[0] = 0
+  for line in expandTilde(f).lines:
+    indptr[i+1] = indptr[i]
+    k = 0
+    k.inc(parseFloat(line, target, k))
+    y[i] = target
+    k.inc()
+    while k < len(line):
+      k.inc(parseInt(line, field, k))
+      fields[nnz] = field - offsetField
+      k.inc()
+
+      k.inc(parseInt(line, j, k))
+      indices[nnz] = j-offset
+      k.inc()
+
+      k.inc(parseFloat(line, val, k))
+      data[nnz] = val
+
+      k.inc()
+      nnz.inc()
+      indptr[i+1].inc()
+    i.inc()
+  return (data, indices, indptr, fields, nFeatures, offset, nFields, offsetField)
+
+
+proc loadFFMFile*(f: string, dataset: var CSRFieldDataset, y: var seq[float64],
+                  nFeatures: int = -1, nFields = -1) =
+  ## Loads svmlight/libsvm formt file as CSRDataset and seq[float64].
+  var data: seq[float64]
+  var indices, indptr, fields: seq[int]
+  var nFeaturesPredicted, nFieldsPredicted: int
+  var offset, offsetField: int
+  (data, indices, indptr, fields, nFeaturesPredicted, offset, nFieldsPredicted, offsetField) = loadFFMFile(f, y)
+  let nSamples = len(y)
+  if (nFields > 0) and (nFieldsPredicted > nFields):
+    var msg = "nFields is " & $nFields
+    msg &= " but dataset has at least " & $nFieldsPredicted & " fields."
+    raise newException(ValueError, msg)
+
+  if (nFeatures > 0) and (nFeaturesPredicted > nFeatures):
+    var msg = "nFeatures is " & $nFeatures
+    msg &= " but dataset has at least " & $nFeaturesPredicted & " features."
+    raise newException(ValueError, msg)
+
+  dataset = newCSRFieldDataset(
+    data=data, indices=indices, indptr=indptr, fields=fields,
+    nSamples=nSamples, nFeatures=max(nFeaturesPredicted, nFeatures),
+    nFields=max(nFieldsPredicted, nFields))
+
+
 proc dumpSVMLightFile*(f: string, X: CSRDataset, y: seq[SomeNumber]) =
   ## Dumps CSRDataset and seq[float64] as svmlight/libsvm format file.
   var f: File = open(f, fmWrite)
@@ -588,6 +818,21 @@ proc dumpSVMLightFile*(f: string, X: seq[seq[float64]], y: seq[SomeNumber]) =
       if val != 0.0:
         f.write(fmt" {j+1}:{val}")
     if i+1 != len(X):
+      f.write("\n")
+  f.close()
+
+
+proc dumpFFMFile*(f: string, X: CSRFieldDataset, y: seq[SomeNumber]) =
+  ## Dumps CSRDataset and seq[float64] as svmlight/libsvm format file.
+  var f: File = open(f, fmWrite)
+  if X.nSamples != len(y):
+    raise newException(ValueError, "X.nSamples != len(y).")
+
+  for i in 0..<X.nSamples:
+    f.write(y[i])
+    for (field, j, val) in X.getRowWithField(i):
+      f.write(fmt" {field+1}:{j+1}:{val}")
+    if i+1 != X.nSamples:
       f.write("\n")
   f.close()
 
@@ -871,7 +1116,7 @@ proc transposeFile*(fIn: string, fOut:string, cacheSize=200) =
   elif magic == magicStringCSC:
     strmOut.write(magicStringCSR)
   else:
-    let msg = fmt"{fIn} is not neither StreamCSC and StreamCSR file."
+    let msg = fmt"{fIn} is not neither StreamCSC nor StreamCSR file."
     raise newException(IOError, msg)
   
   discard strmIn.readData(addr(header), sizeof(header))
@@ -941,6 +1186,209 @@ proc transposeFile*(fIn: string, fOut:string, cacheSize=200) =
           elements[offsets[element.id]].val = element.val
           inc(offsets[element.id])
           inc(nCached)
+    # write!
+    for ii in 0..<nCached:
+      strmOut.write(elements[ii])
+      dec(nnzCols[j])
+      while j < header.nCols and nnzCols[j] == 0:
+        inc(j)
+        if j < header.nCols:
+          strmOut.write(nnzCols[j])
+    lastRead = lastReadNext
+  strmIn.close()
+  strmOut.close()
+
+
+proc convertFFMFile*(fIn: string, fOutX: string, fOutY: string) =
+  ### Converts an FFMFile to a binary file (0-based index).
+  var
+    val: float64
+    minVal = high(float64)
+    maxVal = low(float64)
+    pos, j, field: int
+    minIndex = 1
+    maxIndex = 0
+    minFieldIndex = 1
+    maxFieldIndex = 0
+    nSamples = 0
+    nnz = 0
+    strmIn = openFileStream(expandTilde(fIn), fmRead)
+    strmOutX = openFileStream(expandTilde(fOutX), fmWrite)
+    strmOutY = openFileStream(expandTilde(fOutY), fmWrite)
+    target: float64
+
+  if strmIn.isNil:
+    raise newException(ValueError, fmt"{fIn} cannot be read.")
+  if strmOutX.isNil:
+    raise newException(ValueError, fmt"{fOutX} cannot be read.")
+  if strmOutY.isNil:
+    raise newException(ValueError, fmt"{fOutY} cannot be read.")
+
+  # determine header information
+  for line in strmIn.lines:
+    pos = 0
+    nSamples.inc()
+    pos.inc(parseFloat(line, target, pos))
+    pos.inc()
+    while pos < len(line):
+      pos.inc(parseInt(line, field, pos))
+      minFieldIndex = min(field, minFieldIndex)
+      maxFieldIndex = max(field, maxFieldIndex)
+      pos.inc()
+
+      pos.inc(parseInt(line, j, pos))
+      minIndex = min(j, minIndex)
+      maxIndex = max(j, maxIndex)
+      pos.inc()
+
+      pos.inc(parseFloat(line, val, pos))
+      minVal = min(minVal, val)
+      maxVal = max(maxVal, val)
+      pos.inc()
+      nnz.inc()
+  if minFieldIndex < 0:
+    raise newException(ValueError, "Negative field index is included.")
+  if minIndex < 0:
+    raise newException(ValueError, "Negative index is included.")
+  let nFields = maxFieldIndex - minFieldIndex + 1
+  let nFeatures = maxIndex - minIndex + 1
+  var header = SparseStreamFieldHeader(nRows: nSamples, nCols: nFeatures, nnz: nnz,
+                                       max: maxVal, min: minVal, nFields: nFields)
+  var element = SparseFieldElement(field: 0, val: 0.0, id: 0)
+  # read again and write
+  strmOutX.write(magicStringCSRField)
+  strmOutX.writeData(addr(header), sizeof(header))
+  strmIn.setPosition(0)
+  for line in strmIn.lines:
+    # determine nnz of line
+    pos = 0
+    var nnzRow = 0
+    pos.inc(parseFloat(line, target, pos))
+    pos.inc()
+    # count nnz of each row
+    while pos < len(line):
+      pos.inc(parseInt(line, field, pos))
+      pos.inc()
+
+      pos.inc(parseInt(line, j, pos))
+      pos.inc()
+
+      pos.inc(parseFloat(line, val, pos))
+      pos.inc()
+      nnz.inc()
+      inc(nnzRow)
+    # parse string and write
+    strmOutX.write(nnzRow)
+    pos = 0
+    pos.inc(parseFloat(line, target, pos))
+    pos.inc()
+    strmOutY.write(target)
+    while pos < len(line):
+      pos.inc(parseInt(line, element.field, pos))
+      pos.inc()
+      pos.inc(parseInt(line, element.id, pos))
+      pos.inc()
+      pos.inc(parseFloat(line, element.val, pos))
+      pos.inc()
+      nnz.inc()
+      element.id -= minIndex
+      strmOutX.write(element)
+
+  strmIn.close()
+  strmOutX.close()
+  strmOutY.close()
+
+
+proc transposeFieldFile*(fIn: string, fOut:string, cacheSize=200) =
+  ## Transposes a StreamCSCField/CSRField and write it.
+  var
+    strmIn = openFileStream(expandTilde(fIn), fmRead)
+    strmOut = openFileStream(expandTilde(fOut), fmWrite)
+
+  if strmIn.isNil:
+    raise newException(ValueError, fmt"{fIn} cannot be read.")
+  if strmOut.isNil:
+    raise newException(ValueError, fmt"{fOut} cannot be read.")
+  var header: SparseStreamFieldHeader
+  var magic: array[nMagicString, char]
+  discard strmIn.readData(addr(magic), nMagicString)
+
+  if magic == magicStringCSRField:
+    strmOut.write(magicStringCSCField)
+  elif magic == magicStringCSCField:
+    strmOut.write(magicStringCSRField)
+  else:
+    let msg = fmt"{fIn} is not neither StreamCSCField nor StreamCSRField file."
+    raise newException(IOError, msg)
+  
+  discard strmIn.readData(addr(header), sizeof(header))
+  
+  strmOut.write(header)
+
+  # read and write
+  if magic == magicStringCSCField:
+    swap(header.nCols, header.nRows)
+  var nnz: int
+  var nnzCols = newSeqWith(header.nCols, 0)
+  var nnzColsRest = newSeqWith(header.nCols, 0)
+  var offsets = newSeqWith(header.nCols, 0)
+  var element: SparseFieldElement
+  let tmp = (cacheSize * 1024^2 - 3*sizeof(int)*header.nCols)
+  var nCachedElementsMax = tmp div sizeof(SparseFieldElement)
+  var elements = newSeq[SparseFieldElement](nCachedElementsMax)
+  # determine the nnz of each col
+  for i in 0..<header.nRows:
+    strmIn.read(nnz)
+    for j in 0..<nnz:
+      strmIn.read(element)
+      inc(nnzCols[element.id])
+  
+  for j in 0..<header.nCols:
+    nnzColsRest[j] = nnzCols[j]
+  # write file
+  var j = 0
+  var lastRead = -1
+
+  strmOut.write(nnzCols[0])
+  while j < header.nCols:
+    var nCachedCols = 0
+    strmIn.setPosition(nMagicString+sizeof(SparseStreamFieldHeader))
+    # determine the number of cols read
+    # in this loop, j..<(j+nCachedCols) columns are dumped completely
+    var nCachedRest = nCachedElementsMax
+    while j + nCachedCols < header.nCols:
+      offsets[j+nCachedCols] = nCachedElementsMax - nCachedRest
+      nCachedRest -= nnzColsRest[j+nCachedCols]
+      if nCachedRest >= 0:
+        nnzColsRest[j+nCachedCols] = 0
+        inc(nCachedCols)
+      else:
+        nnzColsRest[j+nCachedCols] = -nCachedRest
+        break
+    
+    # read rows and caches
+    var nCached = 0
+    var lastReadNext = 0
+    for i in 0..<header.nRows:
+      if nCached == nCachedElementsMax:
+        break
+      var nnzRow = 0
+      strmIn.read(nnzRow)
+      for _ in 0..<nnzRow:
+        strmIn.read(element)
+        if element.id >= j and element.id <= (j+nCachedCols):
+          if element.id == j and i <= lastRead: # already read
+            continue
+          if element.id == (j+nCachedCols):
+            if offsets[element.id] >= nCachedElementsMax: # filled
+              continue
+            else:
+              lastReadNext = i
+          elements[offsets[element.id]].id = i
+          elements[offsets[element.id]].val = element.val
+          inc(offsets[element.id])
+          inc(nCached)
+
     # write!
     for ii in 0..<nCached:
       strmOut.write(elements[ii])

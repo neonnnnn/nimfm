@@ -24,16 +24,16 @@ proc `$`*[T: Matrix|Tensor](X: T): string =
   result &= "]"
 
 
-proc shape*[T](self: seq[T]): array[1, int] = [len(self)]
+func shape*[T](self: seq[T]): array[1, int] = [len(self)]
 
 
-proc shape*(self: Matrix): array[2, int] = self.shape
+func shape*(self: Matrix): array[2, int] = self.shape
 
 
-proc shape*(self: Tensor): array[3, int] = self.shape
+func shape*(self: Tensor): array[3, int] = self.shape
 
 
-proc len*[T: Tensor|Matrix](self: T): int =
+func len*[T: Tensor|Matrix](self: T): int =
   result = self.shape[0]
 
 
@@ -245,7 +245,7 @@ proc `[]`*[U1, V1](self: Matrix, x: HSlice[U1, V1]): Matrix {.inline.} =
   let b1 = self ^^ x.b
   result = zeros([b1-a1+1, self.shape[1]])
   for i in a1..b1:
-    result[i] = self[i]
+    result.data[i] = self[i]
 
 
 proc `[]`*[U1, V1](self: Matrix, x: HSlice[U1, V1], j: int): Vector =

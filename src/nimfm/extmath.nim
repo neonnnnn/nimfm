@@ -2,14 +2,17 @@ import strformat, math
 import tensor/tensor, tensor/sparse, tensor/sparse_stream, dataset
 
 type
-  RowData = CSRMatrix|StreamCSRMatrix|CSRDataset|StreamCSRDataset
+  RowData = RowDataset|RowMatrix|StreamRowMatrix
 
-  ColData = CSCMatrix|StreamCSCMatrix|CSCDataset|StreamCSCDataset
+  ColData = ColDataset|ColMatrix|StreamColMatrix
 
 
 proc matmul*[T: RowData](D: Matrix, S: T, R: var Matrix) =
-  if D.shape[1] != S.shape[0]:
-    let msg = fmt"D.shape[1] {D.shape[1]} != shape[0] {S.shape[0]}."
+  let
+    n1 = D.shape[1]
+    n2 = S.shape[0]
+  if n1 != n2:
+    let msg = fmt"D.shape[1] {n1} != shape[0] {n2}."
     raise newException(ValueError, msg)
 
   R[0..^1, 0..^1] = 0.0
@@ -20,8 +23,11 @@ proc matmul*[T: RowData](D: Matrix, S: T, R: var Matrix) =
       
 
 proc matmul*[T: ColData](D: Matrix, S: T, R: var Matrix) =
-  if D.shape[1] != S.shape[0]:
-    let msg = fmt"D.shape[1] {D.shape[1]} != shape[0] {S.shape[0]}."
+  let
+    n1 = D.shape[1]
+    n2 = S.shape[0]
+  if n1 != n2:
+    let msg = fmt"D.shape[1] {n1} != S.shape[0] {n2}."
     raise newException(ValueError, msg)
 
   R[0..^1, 0..^1] = 0.0
@@ -32,8 +38,11 @@ proc matmul*[T: ColData](D: Matrix, S: T, R: var Matrix) =
  
 
 proc matmul*[T: RowData](S: T, D: Matrix, R: var Matrix) =
-  if D.shape[0] != S.shape[0]:
-    let msg = fmt"shape[1] {S.shape[1]} != D.shape[0] {D.shape[0]}."
+  let
+    n1 = D.shape[0]
+    n2 = S.shape[1]
+  if n1 != n2:
+    let msg = fmt"S.shape[1] {n2} != D.shape[0] {n1}."
     raise newException(ValueError, msg) 
   R[0..^1, 0..^1] = 0.0
 
@@ -44,8 +53,11 @@ proc matmul*[T: RowData](S: T, D: Matrix, R: var Matrix) =
 
 
 proc matmul*[T: ColData](S: T, D: Matrix, R: var Matrix) =
-  if D.shape[0] != S.shape[0]:
-    let msg = fmt"shape[1] {S.shape[1]} != D.shape[0] {D.shape[0]}."
+  let
+    n1 = D.shape[0]
+    n2 = S.shape[1]
+  if n1 != n2:
+    let msg = fmt"S.shape[1] {n2} != D.shape[0] {n1}."
     raise newException(ValueError, msg) 
 
   R[0..^1, 0..^1] = 0.0
@@ -55,13 +67,13 @@ proc matmul*[T: ColData](S: T, D: Matrix, R: var Matrix) =
         R[i, n] += val * D[j, n]
 
 
-proc matmul*[T: CSRDataset|CSCDataset|CSRMatrix|CSCMatrix](D: Matrix, S: T): Matrix =
+proc matmul*[T: RowData|ColData](D: Matrix, S: T): Matrix =
   new(result)
   result = zeros([D.shape[0], S.shape[1]])
   matmul(D, S, result)
 
 
-proc matmul*[T: CSRDataset|CSCDataset|CSRMatrix|CSCMatrix](S: T, D: Matrix): Matrix =
+proc matmul*[T: RowData|ColData](S: T, D: Matrix): Matrix =
   new(result)
   result = zeros([S.shape[0], D.shape[1]])
   matmul(S, D, result)

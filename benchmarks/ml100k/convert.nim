@@ -2,15 +2,15 @@ import nimfm
 
 
 when isMainModule:
-  convertSVMLightFile("ml-100k_user_item_feature_train.svm",
-                      "ml-100k_user_item_feature_train_samples",
-                      "ml-100k_train_labels")
-  convertSVMLightFile("ml-100k_user_item_feature_test.svm",
-                      "ml-100k_user_item_feature_test_samples",
-                      "ml-100k_test_labels")
-  transposeFile("ml-100k_user_item_feature_train_samples",
-                "ml-100k_user_item_feature_train_samples_csc",
+  convertSVMLightFile("dataset/ml-100k_user_item_feature_train.svm",
+                      "dataset/ml-100k_user_item_feature_train_samples",
+                      "dataset/ml-100k_train_labels")
+  convertSVMLightFile("dataset/ml-100k_user_item_feature_test.svm",
+                      "dataset/ml-100k_user_item_feature_test_samples",
+                      "dataset/ml-100k_test_labels")
+  transposeFile("dataset/ml-100k_user_item_feature_train_samples",
+                "dataset/ml-100k_user_item_feature_train_samples_csc",
                 cachesize=5)
-  transposeFile("ml-100k_user_item_feature_train_samples_csc",
-                "ml-100k_user_item_feature_train_samples_csc_transpose",
+  transposeFile("dataset/ml-100k_user_item_feature_train_samples_csc",
+                "dataset/ml-100k_user_item_feature_train_samples_csc_transpose",
                 cachesize=5)

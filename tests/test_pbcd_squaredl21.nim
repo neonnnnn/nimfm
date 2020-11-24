@@ -1,11 +1,11 @@
 import unittest
-import utils, optimizers/pbcd_slow
+import utils, optimizer/pbcd_slow
 import nimfm/loss, nimfm/dataset, nimfm/tensor/tensor
-import nimfm/models/factorization_machine, nimfm/models/fm_base
-import nimfm/optimizers/pbcd
-import nimfm/regularizers/regularizers
-import regularizers/squaredl21_slow
-import models/fm_slow
+import nimfm/model/factorization_machine, nimfm/model/fm_base
+import nimfm/optimizer/pbcd
+import nimfm/regularizer/regularizers
+import regularizer/squaredl21_slow
+import model/fm_slow
 
 
 suite "Test proximal block coordinate descent for SquaredL21":

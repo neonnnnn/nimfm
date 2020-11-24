@@ -15,6 +15,24 @@ type
     ## Type for column-wise optimizers.
     indices*: seq[int]
     indptr*: seq[int]
+  
+  CSRFieldMatrix* = ref object of BaseSparseMatrix
+   ## Type for row-wise optimizers.
+   indices*: seq[int]
+   indptr*: seq[int]
+   fields*: seq[int]
+   nFields: int
+  
+  CSCFieldMatrix* = ref object of BaseSparseMatrix
+   ## Type for column-wise optimizers.
+   indices*: seq[int]
+   indptr*: seq[int]
+   fields*: seq[int]
+   nFields: int
+  
+  RowMatrix* = CSRMatrix|CSRFieldMatrix
+
+  ColMatrix* = CSCMatrix|CSCFieldMatrix
 
   NormKind* = enum
     l1, l2, linfty
@@ -38,6 +56,18 @@ func max*(self: BaseSparseMatrix): float64 =
 func min*(self: BaseSparseMatrix): float64 =
   ## Returns the maximum value in the matrix.
   result = min(0.0, min(self.data))
+
+
+func nCached*(self: RowMatrix): int = self.shape[0]
+
+
+func nCached*(self: ColMatrix): int = self.shape[1]
+
+
+func nFields*(self: CSRFieldMatrix): int = self.nFields
+
+
+proc readCache*(self: BaseSparseMatrix, i: int, tranpose: bool) = discard
 
 
 proc `*=`*(self: BaseSparseMatrix, val: float64) = 
@@ -70,7 +100,21 @@ func newCSCMatrix*(data: seq[float64], indices, indptr: seq[int],
                      shape: shape)
 
 
-iterator getRow*(self: CSRMatrix, i: int): (int, float64) =
+func newCSRFieldMatrix*(data: seq[float64], indices, indptr, fields: seq[int], 
+                        shape: array[2, int], nFields: int): CSRFieldMatrix =
+  ## Creates new CSRMatrix instance
+  result = CSRFieldMatrix(data: data, indices: indices, indptr: indptr, 
+                          fields: fields, shape: shape, nFields: nFields)
+
+
+func newCSCFieldMatrix*(data: seq[float64], indices, indptr, fields: seq[int], 
+                        shape: array[2, int], nFields: int): CSCFieldMatrix =
+  ## Creates new CSRMatrix instance
+  result = CSCFieldMatrix(data: data, indices: indices, indptr: indptr, 
+                          fields: fields, shape: shape, nFields: nFields)
+
+
+iterator getRow*(self: RowMatrix, i: int): (int, float64) =
   ## Yields the index and the value of non-zero elements in i-th row.
   var jj = self.indptr[i]
   let jjMax = self.indptr[i+1]
@@ -79,7 +123,7 @@ iterator getRow*(self: CSRMatrix, i: int): (int, float64) =
     inc(jj)
 
 
-proc getRow*(self: CSRMatrix, i: int): iterator(): (int, float64) =
+proc getRow*(self: RowMatrix, i: int): iterator(): (int, float64) =
   ## Yields the index and the value of non-zero elements in i-th row.
   return iterator(): (int, float64) =
     var jj = self.indptr[i]
@@ -89,7 +133,7 @@ proc getRow*(self: CSRMatrix, i: int): iterator(): (int, float64) =
       inc(jj)
 
 
-iterator getRowIndices*(self: CSRMatrix, i: int): int =
+iterator getRowIndices*(self: RowMatrix, i: int): int =
   ## Yields the index of non-zero elements in i-th row.
   var jj = self.indptr[i]
   let jjMax = self.indptr[i+1]
@@ -98,7 +142,7 @@ iterator getRowIndices*(self: CSRMatrix, i: int): int =
     inc(jj)
 
 
-proc getRowIndices*(self: CSRMatrix, i: int): iterator(): int =
+proc getRowIndices*(self: RowMatrix, i: int): iterator(): int =
   ## Yields the index of non-zero elements in i-th row.
   return iterator(): int =
     var jj = self.indptr[i]
@@ -108,7 +152,26 @@ proc getRowIndices*(self: CSRMatrix, i: int): iterator(): int =
       inc(jj)
 
 
-iterator getCol*(self: CSCMatrix, j: int): (int, float64) =
+iterator getRowWithField*(self: CSRFieldMatrix, i: int): (int, int, float64) =
+  ## Yields the index and the value of non-zero elements in i-th row.
+  var jj = self.indptr[i]
+  let jjMax = self.indptr[i+1]
+  while (jj < jjMax):
+    yield (self.fields[jj], self.indices[jj], self.data[jj])
+    inc(jj)
+
+
+proc getRowWithField*(self: CSRFieldMatrix, i: int): iterator(): (int, int, float64) =
+  ## Yields the index and the value of non-zero elements in i-th row.
+  return iterator(): (int, int, float64) =
+    var jj = self.indptr[i]
+    let jjMax = self.indptr[i+1]
+    while (jj < jjMax):
+      yield (self.fields[jj], self.indices[jj], self.data[jj])
+      inc(jj)
+
+
+iterator getCol*(self: ColMatrix, j: int): (int, float64) =
   ## Yields the index and the value of non-zero elements in j-th column.
   var ii = self.indptr[j]
   let iiMax = self.indptr[j+1]
@@ -117,7 +180,7 @@ iterator getCol*(self: CSCMatrix, j: int): (int, float64) =
     inc(ii)
 
 
-proc getCol*(self: CSCMatrix, j: int): iterator(): (int, float64) =
+proc getCol*(self: ColMatrix, j: int): iterator(): (int, float64) =
   ## Yields the index and the value of non-zero elements in j-th column.
   return iterator(): (int, float64) =
     var ii = self.indptr[j]
@@ -127,7 +190,7 @@ proc getCol*(self: CSCMatrix, j: int): iterator(): (int, float64) =
       inc(ii)
 
 
-iterator getColIndices*(self: CSCMatrix, j: int): int =
+iterator getColIndices*(self: ColMatrix, j: int): int =
   ## Yields the index of non-zero elements in j-th column.
   var ii = self.indptr[j]
   let iiMax = self.indptr[j+1]
@@ -136,7 +199,7 @@ iterator getColIndices*(self: CSCMatrix, j: int): int =
     inc(ii)
 
 
-proc getColIndices*(self: CSCMatrix, j: int): iterator(): int =
+proc getColIndices*(self: ColMatrix, j: int): iterator(): int =
   ## Yields the index of non-zero elements in j-th column.
   return iterator(): int = 
     var ii = self.indptr[j]
@@ -146,7 +209,26 @@ proc getColIndices*(self: CSCMatrix, j: int): iterator(): int =
       inc(ii)
 
 
-func `[]`*(self: CSRMatrix, i, j: int): float64 =
+iterator getColWithField*(self: CSCFIeldMatrix, j: int): (int, int, float64) =
+  ## Yields the index and the value of non-zero elements in j-th column.
+  var ii = self.indptr[j]
+  let iiMax = self.indptr[j+1]
+  while (ii < iiMax):
+    yield (self.fields[ii], self.indices[ii], self.data[ii])
+    inc(ii)
+
+
+proc getColWithField*(self: CSCFieldMatrix, j: int): iterator(): (int, int, float64) =
+  ## Yields the index and the value of non-zero elements in j-th column.
+  return iterator(): (int, int, float64) =
+    var ii = self.indptr[j]
+    let iiMax = self.indptr[j+1]
+    while (ii < iiMax):
+      yield (self.fields[ii], self.indices[ii], self.data[ii])
+      inc(ii)
+
+
+func `[]`*(self: RowMatrix, i, j: int): float64 =
   ## Returns the value of (i, j) element in matrix
   result = 0.0
   for (j2, val) in self.getRow(i):
@@ -156,7 +238,7 @@ func `[]`*(self: CSRMatrix, i, j: int): float64 =
     elif j2 > j: break
 
 
-func `[]`*(self: CSCMatrix, i, j: int): float64 =
+func `[]`*(self: ColMatrix, i, j: int): float64 =
   ## Returns the value of (i, j) element in matrix
   result = 0.0
   for (i2, val) in self.getCol(j):
@@ -248,6 +330,44 @@ func `[]`*(X: CSCMatrix, slice: HSlice[int, BackwardsIndex]): CSCMatrix =
   result = X[slice.a..(X.shape[0]-int(slice.b))]
 
 
+func `[]`*(X: CSRFieldMatrix, indicesRow: openarray[int]): CSRFieldMatrix =
+  ## Returns new CSRFieldMatrix by picking rows from X.
+  ## Specifies the indices of row vectors taken out by indicesRow.
+  checkIndicesRow(X, indicesRow)
+  var shape: array[2, int]
+  shape[0] = len(indicesRow)
+  shape[1] = X.shape[1]
+  var indptr = newSeqWith(len(indicesRow)+1, 0)
+  var nnz = 0
+  for ii, i in indicesRow:
+    nnz += (X.indptr[i+1] - X.indptr[i])
+    indptr[ii+1] = nnz
+  
+  var indices = newSeqWith(nnz, 0)
+  var data = newSeqWith(nnz, 0.0)
+  var fields = newSeqWith(nnz, 0)
+  var count = 0
+  for i in indicesRow:
+    for (f, j, val) in X.getRowWithField(i):
+      indices[count] = j
+      fields[count] = f
+      data[count] = val
+      inc(count)
+
+  result = newCSRFieldMatrix(data, indices, indptr, fields, shape, X.nFields)
+
+
+func `[]`*(X: CSRFieldMatrix, slice: Slice[int]): CSRFieldMatrix =
+  ## Takes out row vectors of X and returns new CSRMatrixs by slicing.
+  result = X[toSeq(slice)]
+
+
+func `[]`*(X: CSRFieldMatrix, slice: HSlice[int, BackwardsIndex]): CSRFieldMatrix =
+  ## Takes out row vectors of X and returns new CSRMatrixs by slicing.
+  result = X[slice.a..(X.shape[0]-int(slice.b))]
+
+
+
 # Normizling function for CSRMatrix
 proc normalize(data: var seq[float64], indices, indptr: seq[int],
                axis, nRows, nCols: int, f: (float64, float64)->float64,
@@ -274,8 +394,8 @@ proc normalize(data: var seq[float64], indices, indptr: seq[int],
         data[jj] /= norms[j]
 
 
-proc normalize*(X: CSRMatrix, axis=1, norm: NormKind = l2) =
-  ## Normalizes dataset X by l1, l2, or linfty norm (in-place).
+proc normalize*(X: RowMatrix, axis=1, norm: NormKind = l2) =
+  ## Normalizes matrix X by l1, l2, or linfty norm (in-place).
   ## axis=1: normalize per instance.
   ## axis=0: normalize per feature.
   ## dummy_features are ignored.
@@ -291,8 +411,8 @@ proc normalize*(X: CSRMatrix, axis=1, norm: NormKind = l2) =
               (x, y) => max(x, abs(y)), x => x)
 
 
-proc normalize*(X: CSCMatrix, axis=1, norm: NormKind = l2) =
-  ## Normalizes dataset X by l1, l2, or linfty norm (in-place).
+proc normalize*(X: ColMatrix, axis=1, norm: NormKind = l2) =
+  ## Normalizes matrix X by l1, l2, or linfty norm (in-place).
   ## axis=1: normalize per instance.
   ## axis=0: normalize per feature.
   case norm # Leverage the fact that transpose of CSC is CSR
@@ -407,6 +527,24 @@ func toCSCMatrix*(self: CSRMatrix): CSCMatrix =
                         shape=self.shape)
 
 
+func toCSRFieldMatrix*(input: seq[seq[float64]]): CSRFieldMatrix =
+  ## Transforms seq[seq[float64]] to CSRFieldMatrix.
+  let csr = toCSRMatrix(input)
+  let fields = newSeqWith[int](csr.nnz, 0)
+  result = newCSRFieldMatrix(
+    data=csr.data, indices=csr.indices, indptr=csr.indptr,
+    fields=fields, shape=csr.shape, nFields=1)
+
+
+func toCSCFieldMatrix*(input: seq[seq[float64]]): CSCFieldMatrix =
+  ## Transforms seq[seq[float64]] to CSRFieldMatrix.
+  let csc = toCSCMatrix(input)
+  let fields = newSeqWith[int](csc.nnz, 0)
+  result = newCSCFieldMatrix(
+    data=csc.data, indices=csc.indices, indptr=csc.indptr,
+    fields=fields, shape=csc.shape, nFields=1)
+
+
 func toSeq*(self: CSRMatrix): seq[seq[float64]] = 
   ## Transforms CSRMatrix to seq[seq[float64]]
   result = newSeqWith(self.shape[0], newSeqWith(self.shape[1], 0.0))
@@ -472,6 +610,64 @@ func vstack*(dataseq: varargs[CSCMatrix]): CSCMatrix =
   cumsum(result.indptr)
 
 
+func vstack*(dataseq: varargs[CSRFieldMatrix]): CSRFieldMatrix =
+  ## Stacks CSRFieldMatrics vertically.
+  new(result)
+  result.shape[0] = dataseq[0].shape[0]
+  result.shape[1] = dataseq[0].shape[1]
+  result.data = dataseq[0].data
+  result.indices = dataseq[0].indices
+  result.indptr = dataseq[0].indptr
+  result.fields = dataseq[0].fields
+  result.nFields = dataseq[0].nFields
+
+  for X in dataseq[1..^1]:
+    let nnz = result.nnz
+    if X.shape[1] != result.shape[1]:
+      raise newException(ValueError, "All matrics must have the same shape[1].")
+    result.data &= X.data
+    result.indices &= X.indices
+    result.indptr &= X.indptr[1..^1].map(x=>(nnz+x))
+    result.fields &= X.fields
+    result.shape[0] += X.shape[0]
+    result.nFields = max(result.nFields, X.nFields)
+
+
+func vstack*(dataseq: varargs[CSCFieldMatrix]): CSCFieldMatrix =
+  ## Stacks CSCFieldMatrics vertically.
+  new(result)
+  result.shape[0] = dataseq[0].shape[0]
+  result.shape[1] = dataseq[0].shape[1]
+  result.nFields = dataseq[0].nFields
+  var nnz = dataseq[0].nnz
+
+  for X in dataseq[1..^1]:
+    result.nFields = max(result.nFields, X.nFields)
+    if X.shape[1] != result.shape[1]:
+      raise newException(ValueError, "All matrics must have the same shape[1].")
+    nnz += X.nnz
+    result.shape[0] += X.shape[0]
+
+  result.data.setLen(nnz)
+  result.indices.setLen(nnz)
+  result.fields.setLen(nnz)
+  result.indptr.setLen(result.shape[0]+1)
+
+  nnz = 0
+  for j in 0..<result.shape[1]:
+    var offset = 0
+    for X in dataseq:
+      for (f, i, val) in X.getColWithField(j):
+        result.data[nnz] = val
+        result.indices[nnz] = i + offset
+        result.fields[nnz] = f
+        inc(result.indptr[j+1])
+        inc(nnz)
+
+      offset += X.shape[0]
+  cumsum(result.indptr)
+
+
 func hstack*(dataseq: varargs[CSRMatrix]): CSRMatrix =
   ## Stacks CSRMatrics horizontally.
   new(result)
@@ -487,7 +683,7 @@ func hstack*(dataseq: varargs[CSRMatrix]): CSRMatrix =
 
   result.data.setLen(nnz)
   result.indices.setLen(nnz)
-  result.indptr.setLen(result.shape[1]+1)
+  result.indptr.setLen(result.shape[0]+1)
   nnz = 0
   for i in 0..<result.shape[0]:
     var offset = 0
@@ -518,3 +714,60 @@ func hstack*(dataseq: varargs[CSCMatrix]): CSCMatrix =
     result.indices &= X.indices
     result.indptr &= X.indptr[1..^1].map(x=>(nnz+x))
     result.shape[1] += X.shape[1]
+
+
+func hstack*(dataseq: varargs[CSRFieldMatrix]): CSRFieldMatrix =
+  ## Stacks CSRFieldMatrics horizontally.
+  new(result)
+  result.shape[0] = dataseq[0].shape[0]
+  result.shape[1] = dataseq[0].shape[1]
+  result.nFields = dataseq[0].nFields
+  var nnz = dataseq[0].nnz
+  for X in dataseq[1..^1]:
+    if X.shape[0] != result.shape[0]:
+      raise newException(ValueError, "All matrics must have the same shape[0].")
+    nnz += X.nnz
+    result.shape[1] += X.shape[1]
+    result.nFields += X.nFields
+
+  result.data.setLen(nnz)
+  result.fields.setLen(nnz)
+  result.indices.setLen(nnz)
+  result.indptr.setLen(result.shape[0]+1)
+  nnz = 0
+  for i in 0..<result.shape[0]:
+    var offset = 0
+    var offsetFields = 0
+    for X in dataseq:
+      for (f, j, val) in X.getRowWithField(i):
+        result.data[nnz] = val
+        result.fields[nnz] = f + offsetFields
+        result.indices[nnz] = j + offset
+        inc(result.indptr[i+1])
+        inc(nnz)
+      offset += X.shape[1]
+      offsetFields += X.nFields
+  cumsum(result.indptr)
+
+
+func hstack*(dataseq: varargs[CSCFieldMatrix]): CSCFieldMatrix =
+  ## Stacks CSCFieldMatrics horizontally.
+  new(result)
+  result.shape[0] = dataseq[0].shape[0]
+  result.shape[1] = dataseq[0].shape[1]
+  result.data = dataseq[0].data
+  result.indices = dataseq[0].indices
+  result.indptr = dataseq[0].indptr
+  result.fields = dataseq[0].fields
+  var nFields = dataseq[0].nFields
+  for X in dataseq[1..^1]:
+    let nnz = result.nnz
+    if X.shape[0] != result.shape[0]:
+      raise newException(ValueError, "All matrics must have the same shape[0]")
+    result.data &= X.data
+    result.indices &= X.indices
+    result.indptr &= X.indptr[1..^1].map(x=>(nnz+x))
+    result.fields &= X.fields.map(x=>(x+nFields))
+    result.shape[1] += X.shape[1]
+    nFields += X.nFields
+  result.nFields = nFields

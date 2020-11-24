@@ -1,12 +1,14 @@
-import nimfm, utils
+import utils
+import nimfm/dataset, nimfm/model, nimfm/regularizer, nimfm/tensor
+import nimfm/optimizer/minibatch_psgd
 
 
 when isMainModule:
   var XTr, XTe: CSRDataset
   var yTr, yTe: seq[float64]
-  loadSVMLightFile("ml-100k_user_item_feature_train.svm",
+  loadSVMLightFile("dataset/ml-100k_user_item_feature_train.svm",
                     XTr, yTr, nFeatures=2703)
-  loadSVMLightFile("ml-100k_user_item_feature_test.svm",
+  loadSVMLightFile("dataset/ml-100k_user_item_feature_test.svm",
                     XTe, yTe, nFeatures=2703)
   var reg = newSquaredL12()
   let beta = 1e-5

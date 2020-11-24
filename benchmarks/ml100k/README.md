@@ -19,10 +19,10 @@ In addition, this benchmark provides factorization machines with sparse regulari
 1. Compile and run `make_ml100k_dataset.nim` with `-d:ssl` option:
 
 
-    nim c --run -d:ssl make_ml100k_dataset.nim
+    nim c --run --d:ssl make_ml100k_dataset.nim
 
  Then, `ml-100k.zip` will be downloaded and uncompressed, and following
- files will be created:
+ files will be created in `dataset` directory:
    - `ml-100k_user_item_all.svm`
    - `ml-100k_user_item_train.svm`
    - `ml-100k_user_item_test.svm`
@@ -36,12 +36,13 @@ In addition, this benchmark provides factorization machines with sparse regulari
   factor (feature) model) methods [1]. `user_item_bias.nim` provides the linear
   regression with user-id and item-id as input. It predicts the rating as
   overall_bias + user_bias + item_bias.
-
+  
+  If you want to run field-aware factorization machines examples (`ffm_sgd.nim` and `ffm_adagrad.nim`), please compile and rune `make_ml100k_dataset_field.nim`.
 
 2. Compile other nim files with `-d:release` and `-d:danger`, 
    and run them. For example,
 
-   nim c --run -d:release -d:danger matrix_factorization.nim
+   nim c --run --d:release --d:danger matrix_factorization.nim
 
   `factorization_machine.nim`, 
   `factorization_machine_sgd.nim`, `factorization_machines_adagrad.nim`, `higher_order_factorization_machine.nim`,
@@ -56,8 +57,8 @@ In addition, this benchmark provides factorization machines with sparse regulari
    It outputs binary versions of `ml-100k_user_item_feature_train.svm` and `ml-100k_user_item_feature_test.svm`.
 
    `sparse*` provides factorization machines with sparse regularization [4,5,6,7].
- 
 
+   When compiling `factorization_machine_sgd_multi`, `factorization_machine_stream_multi`, `factorization_machine_adagrad_multi`, `ffm_sgd`, or `ffm_adagrad`, use `--threads:on` flag. They use multiple threads.
 
 ## References
 1. Y. Koren. Factorization meets the neighborhood: a multifaceted collaborative filtering model. In KDD, pp. 426--434, 2008.

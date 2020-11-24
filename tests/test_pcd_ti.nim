@@ -1,11 +1,11 @@
 import unittest
-import utils, optimizers/pcd_slow
+import utils, optimizer/pcd_slow
 import nimfm/loss, nimfm/dataset, nimfm/tensor/tensor
-import nimfm/models/factorization_machine, nimfm/models/fm_base
-import nimfm/optimizers/pcd
-import nimfm/regularizers/regularizers
-import regularizers/omegati_slow
-import models/fm_slow
+import nimfm/model/factorization_machine, nimfm/model/fm_base
+import nimfm/optimizer/pcd
+import nimfm/regularizer/regularizers
+import regularizer/omegati_slow
+import model/fm_slow
 
 
 suite "Test proximal coordinate descent for OmegaTI":

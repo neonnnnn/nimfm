@@ -1,9 +1,9 @@
 import unittest
-import utils, optimizers/sgd_slow
+import utils, optimizer/sgd_slow
 import nimfm/loss, nimfm/dataset, nimfm/tensor/tensor
-import nimfm/models/factorization_machine, nimfm/models/fm_base
-import nimfm/optimizers/sgd
-import models/fm_slow
+import nimfm/model/factorization_machine, nimfm/model/fm_base
+import nimfm/optimizer/sgd
+import model/fm_slow
 
 
 suite "Test stochastic gradient descent":
