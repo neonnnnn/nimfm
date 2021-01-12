@@ -107,7 +107,7 @@ If you are familiar with **[scikit-learn](https://scikit-learn.org/stable/)**, y
 
 10. H. Zhao, Q. Yao, J. Li, Y. Song, and D. L. Lee. Meta-graph based recommendation fusion over heterogeneous information networks. In KDD, pp. 635–-644, 2017
 
-11. K. Atarashi, S. Oyama, and M. Kurihara. Factorization machines with regularization for sparse feature interactions. preprint.
+11. K. Atarashi, S. Oyama, and M. Kurihara. Factorization machines with regularization for sparse feature interactions. https://arxiv.org/abs/2010.09225
 
 12. A. Beck and M. Teboulle. A fast iterative shrinkage-thresholding algorithm for linear inverse problems. SIAM Journal on Imaging Sciences, 2(1):183-–202, 2009.
 

@@ -45,8 +45,7 @@ proc recomputeCacheBCD(self: OmegaCS, degree: int) =
   self.value = self.cache[degree]
 
 
-proc computeCacheBCD*(self: OmegaCS, P: Matrix, degree: int,
-                      indices: seq[int]) =
+proc computeCacheBCD*(self: OmegaCS, P: Matrix, degree: int) =
   for j in 0..<P.shape[0]:
     self.norms[j] = norm(P[j], 2)
   recomputeCacheBCD(self, degree)

@@ -62,8 +62,7 @@ proc updateCacheCD*(self: L1, P: Matrix, degree, s, j: int) = discard
 
 # for pbcd
 # P.shape: (nFeatures, nComponents)
-proc computeCacheBCD*(self: L1, P: Matrix, degree: int,
-                      indices: seq[int]) =
+proc computeCacheBCD*(self: L1, P: Matrix, degree: int) =
   self.value = 0.0
   for j in 0..<P.shape[0]:
     self.norms[j] = norm(P[j], 1)
