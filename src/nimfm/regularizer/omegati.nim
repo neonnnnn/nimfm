@@ -22,7 +22,7 @@ proc eval*(self: OmegaTI, P: Matrix, degree: int): float64 =
   for j in 0..<nFeatures:
     for deg in 0..<degree:
       for s in 0..<nComponents:
-        cache[degree-deg, s] += self.cache[degree-deg-1]*abs(P[j, s])
+        cache[degree-deg, s] += cache[degree-deg-1, s]*abs(P[j, s])
   result = sum(cache[degree])
 
 
