@@ -190,8 +190,7 @@ proc updateCacheCD*(self: SquaredL12, P: Matrix, degree, s, j: int) =
 
 # for bcd with line search
 # P.shape: (nFeatures, nComponents)
-proc computeCacheBCD*(self: SquaredL12, P: Matrix, degree: int,
-                      indices: seq[int]) =
+proc computeCacheBCD*(self: SquaredL12, P: Matrix, degree: int) =
   for j in 0..<P.shape[0]:
     self.norms[j] = norm(P[j], 1)
   self.value = norm(self.norms, 2)^2

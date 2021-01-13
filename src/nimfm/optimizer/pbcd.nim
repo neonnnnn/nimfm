@@ -172,7 +172,7 @@ proc epoch[L, R](self: PBCD[L, R], X: ColDataset, y: seq[float64],
   if self.shuffle: shuffle(indices)
 
   oldLossVal = lossVal
-  self.reg.computeCacheBCD(P, degree, indices)
+  self.reg.computeCacheBCD(P, degree)
   for j in indices:
     newLossVal = oldLossVal
     oldRegVal = 0.5*self.beta*norm(P[j], 2)^2 + self.gamma*self.reg.value
